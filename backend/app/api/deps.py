@@ -1,0 +1,13 @@
+"""FastAPI dependencies."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+from sqlalchemy.orm import Session
+
+from app.db.session import get_session
+
+
+def get_db() -> Iterator[Session]:
+    yield from get_session()
