@@ -77,3 +77,19 @@ backend/.venv/bin/python -m worker.main --interval 300
 - [ ] 可查看任务状态与 API 调用量/预估费用
 - [ ] 前后端已部署，HTTPS 正常，数据库不暴露，密钥未泄漏
 - [ ] 数据源使用权限已确认
+
+## 9. 可执行部署资产（`deploy/`）
+
+| 文件 | 用途 |
+|---|---|
+| `deploy/systemd/wechatinsight-api.service` | 后端进程守护（含启动前 `alembic upgrade head`） |
+| `deploy/systemd/wechatinsight-worker.service` | Worker 常驻调度进程 |
+| `deploy/nginx/api.wechatinsight.com.conf` | HTTPS 反向代理（80 跳 443，`/health` 不缓存） |
+| `deploy/logrotate/wechatinsight` | `/var/log/wechatinsight/*.log` 每日轮转保留 14 天 |
+| `deploy/backup/pgdump-backup.sh` | 每日 `pg_dump` 逻辑备份 + 校验 + 可选 S3 异地 + 保留策略 |
+| `deploy/backup/restore-test.sh` | 恢复到临时库并比对行数与迁移版本（8.2 演练） |
+| `deploy/acceptance.sh` | 8.3 验收冒烟测试（HTTP + 可选数据库去重/成本校验） |
+
+路径约定：代码 `/opt/wechat-insight`，环境变量 `/opt/wechat-insight/backend/.env`，运行用户 `wechat`，venv `backend/.venv`，日志 `/var/log/wechatinsight`。
+
+注意：`backend/migrations/env.py` 在 Postgres 上优先使用 `DIRECT_DATABASE_URL`（Neon direct，绕过 PgBouncer），否则回退 `DATABASE_URL`；DSN 里的 `+psycopg2` scheme 会自动规整为已安装的 psycopg3，无需 `psycopg2-binary`。

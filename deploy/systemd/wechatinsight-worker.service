@@ -1,0 +1,23 @@
+[Unit]
+Description=WeChat Insight collection worker (APScheduler)
+After=network-online.target wechatinsight-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wechat
+Group=wechat
+WorkingDirectory=/opt/wechat-insight
+EnvironmentFile=/opt/wechat-insight/backend/.env
+Environment=PATH=/opt/wechat-insight/backend/.venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/wechat-insight/backend/.venv/bin/python -m worker.main --interval 300
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+StandardOutput=append:/var/log/wechatinsight/worker.log
+StandardError=append:/var/log/wechatinsight/worker.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+[Unit]
+Description=WeChat Insight API (uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wechat
+Group=wechat
+WorkingDirectory=/opt/wechat-insight/backend
+EnvironmentFile=/opt/wechat-insight/backend/.env
+Environment=PATH=/opt/wechat-insight/backend/.venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStartPre=/opt/wechat-insight/backend/.venv/bin/alembic upgrade head
+ExecStart=/opt/wechat-insight/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 2 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+StandardOutput=append:/var/log/wechatinsight/api.log
+StandardError=append:/var/log/wechatinsight/api.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+/var/log/wechatinsight/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    dateext
+}
