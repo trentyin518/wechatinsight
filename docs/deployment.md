@@ -155,8 +155,23 @@ backend/.venv/bin/python -m worker.main --interval 300
 > 2026-11-08 首轮未冻结：`wechat_accounts 1 / wechat_articles 5` 一致，`article_metrics 6→1`、`api_usage_logs 8→2`
 > 不一致（备份后 worker 又写入 5 条指标快照与若干调用记录，属漂移非缺陷）；冻结写入后复测四表完全一致。
 
-### 10.5 服务管理
+### 10.5 域名备案与端口方案（重要）
 
+`api.wechatinsight.com` 指向大陆 ECS 但**尚未完成 ICP 备案**，阿里云会拦截：
+
+- 80 端口：返回 `Non-compliance ICP Filing` 提示页（不是我们的 301）
+- 443 端口：TCP 可连、TLS 握手可完成，但 HTTP 请求被 RST（`curl: (35) Connection reset by peer`）
+
+因此备案通过前，`https://api.wechatinsight.com` 对外不可用。当前采用**临时端口方案**：
+
+- Nginx 同一 server 块额外监听 **8443**（备案拦截只针对 80/443）
+- 安全组 / firewalld 放行 8443
+- 前端 `NEXT_PUBLIC_API_BASE=https://api.wechatinsight.com:8443`
+- 证书对端口无关，8443 复用同一张证书
+
+备案通过后：去掉 8443 监听、前端改回 443 并 Redeploy。可选替代：部署到香港/海外节点（无需备案）。
+
+### 10.6 服务管理
 ```bash
 systemctl status wechatinsight-api wechatinsight-worker
 journalctl -u wechatinsight-api -n 100 --no-pager
