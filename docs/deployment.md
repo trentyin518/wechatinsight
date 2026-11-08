@@ -200,19 +200,19 @@ bash deploy/acceptance.sh
 | 公众号详情 | PASS id=1 |
 | 文章列表 | PASS total=5 |
 | 文章详情 + 指标非 0 | PASS id=5 metrics null=False |
-| 指标历史 | PASS points=10（worker 每轮追加快照） |
+| 指标历史 | PASS points=11（worker 每轮追加快照） |
 | 404 错误信封 | PASS `{error:{code,message}}` |
 | CORS（`https://www.wechatinsight.com`） | PASS |
+| 账号去重（`provider_account_mappings`） | PASS 无重复 |
 | 文章去重 | PASS 无重复 |
-| `api_usage_logs` 成本记录 | PASS 53 行 |
-| 账号去重查询 | WARN 查询语句报错（见 11.2） |
+| `api_usage_logs` 成本记录 | PASS 58 行 |
 
 补充：同一套脚本在 `API_BASE=http://127.0.0.1:8000` 下也全 PASS，排除 Nginx 干扰。
 
 ### 11.2 遗留项
 
-1. **账号去重查询 WARN**：账号映射唯一键在 `provider_account_mappings(provider, provider_account_id)`，`wechat_accounts` 本身没有 `provider` 列；脚本已按该表修正。
-2. **备案**：8443 为临时方案，备案通过后切回 443（见 10.5）。
-3. **Qovia 真实数据**：`DEFAULT_PROVIDER=mock`，充值后改 `qovia` 再跑一轮验收（成本/真实数据项）。
-4. **故障注入**：未验证第三方 API 故障时的降级行为。
+1. **备案**：8443 为临时方案，备案通过后切回 443（见 10.5）。
+2. **Qovia 真实数据**：`DEFAULT_PROVIDER=mock`，充值后改 `qovia` 再跑一轮验收（成本/真实数据项）。
+3. **故障注入**：未验证第三方 API 故障时的降级行为。
+4. **Worker 重试路径**：未做失败重试的显式验证。
 
