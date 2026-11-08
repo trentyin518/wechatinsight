@@ -135,7 +135,7 @@ backend/.venv/bin/python -m worker.main --interval 300
 
 | 验收项 | 判据 | 结果 |
 |---|---|---|
-| HTTPS | `https://api.wechatinsight.com/health` 200；HTTP 301；`certbot renew --dry-run` 通过 | ✅ 通过（certbot 自动续期已启用，到期日以 `certbot certificates` 为准） |
+| HTTPS | `https://api.wechatinsight.com/health` 200；HTTP 301；`certbot renew --dry-run` 通过 | ✅ 通过（ECDSA 证书，到期 2027-02-05；Nginx 80→443 跳转 + `/.well-known` webroot 续期） |
 | 连接池 | `engine.pool` 为 `QueuePool`，`pool_pre_ping=True`；50 次请求后 `checkedout()==0` | ✅ 通过（size=5 / overflow=10，每 worker） |
 | 日志轮转 | `/etc/logrotate.d/wechatinsight` 生效，`logrotate -f` 生成 `api.log.1`，timer active | ✅ 通过（daily / rotate 14 / compress / copytruncate） |
 | 每日备份 | `backup.sh` 产出非空 dump，`pg_restore --list` 可列出对象，crontab 含 `15 3 * * *` | ✅ 通过（dump + `.sha256`，产物见 `/var/backups/wechatinsight/`） |
