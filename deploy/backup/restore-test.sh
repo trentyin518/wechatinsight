@@ -3,6 +3,12 @@
 # row counts + migration head match production. Never point RESTORE_DATABASE_URL
 # at production.
 #
+# IMPORTANT: freeze writers before running, otherwise the live counts drift away
+# from the dump (the worker writes metric snapshots / usage rows every cycle):
+#   systemctl stop wechatinsight-worker wechatinsight-api
+#   ... run this script ...
+#   systemctl start wechatinsight-api wechatinsight-worker
+#
 # Usage:
 #   RESTORE_DATABASE_URL='postgresql://user:pass@host:5432/wechatinsight_restore' \
 #     deploy/backup/restore-test.sh [path/to/wechatinsight-*.dump]
@@ -23,7 +29,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$ENV_FILE"
 : "${DATABASE_URL:?DATABASE_URL is required}"
 
-src="${DATABASE_URL/postgresql+psycopg2:/postgresql:}"
+# Neon pooler needs the endpoint option when libpq lacks SNI support, so prefer
+# the direct DSN when it is configured.
+_src="${DIRECT_DATABASE_URL:-$DATABASE_URL}"
+src="${_src/postgresql+psycopg2:/postgresql:}"
 src="${src/postgresql+psycopg:/postgresql:}"
 dst="${RESTORE_DATABASE_URL/postgresql+psycopg2:/postgresql:}"
 dst="${dst/postgresql+psycopg:/postgresql:}"

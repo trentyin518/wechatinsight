@@ -16,16 +16,19 @@ done < "$ENV_FILE"
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
 
-# SQLAlchemy DSN -> libpq DSN understood by pg_dump (strip the +driver suffix).
-LIBPQ_URL="${DATABASE_URL/postgresql+psycopg2:/postgresql:}"
+# Neon pooler needs the endpoint option when libpq lacks SNI support.
+_url="${DIRECT_DATABASE_URL:-$DATABASE_URL}"
+LIBPQ_URL="${_url/postgresql+psycopg2:/postgresql:}"
 LIBPQ_URL="${LIBPQ_URL/postgresql+psycopg:/postgresql:}"
 
 mkdir -p "$BACKUP_DIR" /var/log/wechatinsight
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 OUT="$BACKUP_DIR/wechatinsight-$STAMP.dump"
 
-pg_dump "$LIBPQ_URL" --format=custom --no-owner --no-privileges --file="$OUT"
-pg_restore --list "$OUT" >/dev/null
+pg_dump "$LIBPQ_URL" --format=custom --no-owner --no-privileges --file="$OUT.tmp"
+[[ -s "$OUT.tmp" ]] || { rm -f "$OUT.tmp"; echo "empty dump, aborting" >&2; exit 1; }
+pg_restore --list "$OUT.tmp" >/dev/null
+mv "$OUT.tmp" "$OUT"
 sha256sum "$OUT" > "$OUT.sha256"
 
 # Retention (local).

@@ -93,3 +93,74 @@ backend/.venv/bin/python -m worker.main --interval 300
 路径约定：代码 `/opt/wechat-insight`，环境变量 `/opt/wechat-insight/backend/.env`，运行用户 `wechat`，venv `backend/.venv`，日志 `/var/log/wechatinsight`。
 
 注意：`backend/migrations/env.py` 在 Postgres 上优先使用 `DIRECT_DATABASE_URL`（Neon direct，绕过 PgBouncer），否则回退 `DATABASE_URL`；DSN 里的 `+psycopg2` scheme 会自动规整为已安装的 psycopg3，无需 `psycopg2-binary`。
+
+## 10. 生产部署记录（2026-11-08）
+
+### 10.1 环境实况
+
+| 项 | 值 |
+|---|---|
+| 服务器 | 阿里云 ECS（2C / 1.8 GB 内存，已加 3 GB swap） |
+| 代码目录 | `/opt/wechat-insight`（运行用户 `wechat`，`--system` 无登录 shell） |
+| 环境变量 | `/opt/wechat-insight/backend/.env`（`chmod 600`，`chown wechat`） |
+| Python | 3.11.18（uv 托管，已复制到 `/opt/python/cpython-3.11.18-linux-x86_64-gnu`，避免服务用户穿越 `/root`） |
+| venv | `/opt/wechat-insight/backend/.venv`（由 `wechat` 创建，`readlink -f .venv/bin/python` 必须落在 `/opt/python` 或 `/usr/bin`） |
+| 数据库 | Neon Postgres **18.6**（pooler 主机 + `sslmode=require`） |
+| PG 客户端 | `/usr/pgsql-18/bin/{pg_dump,psql,pg_restore}`（阿里云 PGDG 镜像 repo，`/etc/yum.repos.d/pgdg18.repo`） |
+| 反向代理 | Nginx + certbot，`api.wechatinsight.com` → `127.0.0.1:8000` |
+| 服务 | `wechatinsight-api`（uvicorn 2 workers）、`wechatinsight-worker`（APScheduler） |
+
+### 10.2 Neon 连接要点（踩坑记录）
+
+1. **pooler 主机名必须带 endpoint 参数**（旧 libpq 不支持 SNI）：
+   `...?sslmode=require&options=endpoint%3D<endpoint-id>`，即 `DIRECT_DATABASE_URL` 的形态。
+   `pg_dump` / `psql` 一律用 direct 串，不要用裸 pooler 串，否则报
+   `ERROR: Endpoint ID is not specified`。
+2. **`pg_dump` 主版本必须 ≥ 服务器主版本**（Neon 已 PG 18，用 13 会
+   `aborting because of server version mismatch`）。
+3. **`DATABASE_URL` 必须用 `postgresql+psycopg://`**（psycopg3）。写成 `+psycopg2`
+   会 `ModuleNotFoundError: No module named 'psycopg2'`（requirements 未装 psycopg2）。
+4. 阿里云到 `download.postgresql.org` 不可达；改用
+   `https://mirrors.aliyun.com/postgresql/repos/yum/18/redhat/rhel-8-x86_64`。
+5. 1.8 GB 内存实例上 `dnf` 易被 OOM kill（`Killed`）；安装时先停服务并加大 swap。
+
+### 10.3 运维辅助脚本
+
+| 脚本 | 说明 |
+|---|---|
+| `backend/pgenv.sh` | 逐行解析 `.env`（不 `source`，避免 DSN 里的 `&` 被 shell 解释），导出 `PGURL`（优先 `DIRECT_DATABASE_URL`，并规整 `+psycopg2`→裸 `postgresql`） |
+| `backend/backup.sh` | 用 `/usr/pgsql-18/bin/pg_dump` 逻辑备份到 `/var/backups/wechatinsight`，`pg_restore --list` 自检 + sha256 + 14 天保留；cron `15 3 * * *` |
+
+### 10.4 8.2 验收记录（2026-11-08）
+
+| 验收项 | 判据 | 结果 |
+|---|---|---|
+| HTTPS | `https://api.wechatinsight.com/health` 200；HTTP 301；`certbot renew --dry-run` 通过 | ✅ 通过（certbot 自动续期已启用，到期日以 `certbot certificates` 为准） |
+| 连接池 | `engine.pool` 为 `QueuePool`，`pool_pre_ping=True`；50 次请求后 `checkedout()==0` | ✅ 通过（size=5 / overflow=10，每 worker） |
+| 日志轮转 | `/etc/logrotate.d/wechatinsight` 生效，`logrotate -f` 生成 `api.log.1`，timer active | ✅ 通过（daily / rotate 14 / compress / copytruncate） |
+| 每日备份 | `backup.sh` 产出非空 dump，`pg_restore --list` 可列出对象，crontab 含 `15 3 * * *` | ✅ 通过（dump + `.sha256`，产物见 `/var/backups/wechatinsight/`） |
+| 恢复演练 | 恢复到 `wechatinsight_restore` 后四表行数与源库一致，`alembic_version` 一致 | ✅ 通过（`1 / 5 / 16 / 18`，`alembic_version=0001`） |
+
+复核脚本：`backend/verify-82.sh`，输出留档到 `/var/log/wechatinsight/8.2-YYYYMMDD.txt`。
+
+> 演练必须先冻结写入进程，否则源库行数会继续增长、与 dump 产生漂移，出现「dst < src」的假失败：
+>
+> ```bash
+> systemctl stop wechatinsight-worker wechatinsight-api
+> backend/backup.sh
+> # 恢复 + 比对
+> systemctl start wechatinsight-api wechatinsight-worker
+> ```
+>
+> 2026-11-08 首轮未冻结：`wechat_accounts 1 / wechat_articles 5` 一致，`article_metrics 6→1`、`api_usage_logs 8→2`
+> 不一致（备份后 worker 又写入 5 条指标快照与若干调用记录，属漂移非缺陷）；冻结写入后复测四表完全一致。
+
+### 10.5 服务管理
+
+```bash
+systemctl status wechatinsight-api wechatinsight-worker
+journalctl -u wechatinsight-api -n 100 --no-pager
+# 日志同时写入 /var/log/wechatinsight/{api,worker}.log
+systemctl reset-failed wechatinsight-api && systemctl restart wechatinsight-api
+```
+
