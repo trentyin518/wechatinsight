@@ -66,17 +66,17 @@ backend/.venv/bin/python -m worker.main --interval 300
 
 ## 8. 上线验收清单（对应设计文档第十八节）
 
-- [ ] 可搜索公众号、查询详情、历史文章与可用互动指标
-- [ ] 指标以快照形式保存，缺失不显示为 0
-- [ ] 能识别重复账号与重复文章
-- [ ] 展示数据来源与更新时间
-- [ ] 能记录数据源与调用成本
-- [ ] 首页可搜索，结果支持分页，详情页正常
-- [ ] 第三方 API 故障不会导致整站不可用
-- [ ] 采集任务自动运行，失败可重试，重复任务不产生重复数据
-- [ ] 可查看任务状态与 API 调用量/预估费用
-- [ ] 前后端已部署，HTTPS 正常，数据库不暴露，密钥未泄漏
-- [ ] 数据源使用权限已确认
+- [x] 可搜索公众号、查询详情、历史文章与可用互动指标
+- [x] 指标以快照形式保存，缺失不显示为 0
+- [ ] 能识别重复账号与重复文章（文章去重已 PASS；账号去重查询脚本待修，见 11.2）
+- [x] 展示数据来源与更新时间
+- [x] 能记录数据源与调用成本
+- [x] 首页可搜索，结果支持分页，详情页正常
+- [ ] 第三方 API 故障不会导致整站不可用（未做故障注入验证）
+- [ ] 采集任务自动运行，失败可重试，重复任务不产生重复数据（worker 运行中，重试路径未验证）
+- [x] 可查看任务状态与 API 调用量/预估费用
+- [x] 前后端已部署，HTTPS 正常，数据库不暴露，密钥未泄漏（公网端口暂用 8443，见 10.5）
+- [ ] 数据源使用权限已确认（待 Qovia 账号与授权）
 
 ## 9. 可执行部署资产（`deploy/`）
 
@@ -178,4 +178,42 @@ journalctl -u wechatinsight-api -n 100 --no-pager
 # 日志同时写入 /var/log/wechatinsight/{api,worker}.log
 systemctl reset-failed wechatinsight-api && systemctl restart wechatinsight-api
 ```
+
+## 11. 8.3 验收记录（2026-11-08）
+
+### 11.1 冒烟结果
+
+命令（服务器执行，走公网 8443）：
+
+```bash
+PATH=/usr/pgsql-18/bin:$PATH \
+API_BASE=https://api.wechatinsight.com:8443 \
+FRONTEND_ORIGIN=https://www.wechatinsight.com \
+SEARCH_Q='示例' DATABASE_URL="$PGURL" \
+bash deploy/acceptance.sh
+```
+
+| 检查 | 结果 |
+|---|---|
+| `GET /health` | PASS 200 `{status: ok}` |
+| 搜索（`page_size` 上限生效） | PASS total=1 items=1 |
+| 公众号详情 | PASS id=1 |
+| 文章列表 | PASS total=5 |
+| 文章详情 + 指标非 0 | PASS id=5 metrics null=False |
+| 指标历史 | PASS points=10（worker 每轮追加快照） |
+| 404 错误信封 | PASS `{error:{code,message}}` |
+| CORS（`https://www.wechatinsight.com`） | PASS |
+| 文章去重 | PASS 无重复 |
+| `api_usage_logs` 成本记录 | PASS 53 行 |
+| 账号去重查询 | WARN 查询语句报错（见 11.2） |
+
+补充：同一套脚本在 `API_BASE=http://127.0.0.1:8000` 下也全 PASS，排除 Nginx 干扰。
+
+### 11.2 遗留项
+
+1. **账号去重查询 WARN**：`acceptance.sh` 的账号去重 SQL 需与真实唯一键 `(provider, provider_account_id)` 对齐；定位命令：
+   `psql "$PGURL" -Atc 'select count(*) from (select provider, provider_account_id from wechat_accounts group by 1,2 having count(*)>1) x'`
+2. **备案**：8443 为临时方案，备案通过后切回 443（见 10.5）。
+3. **Qovia 真实数据**：`DEFAULT_PROVIDER=mock`，充值后改 `qovia` 再跑一轮验收（成本/真实数据项）。
+4. **故障注入**：未验证第三方 API 故障时的降级行为。
 
