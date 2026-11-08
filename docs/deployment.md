@@ -179,6 +179,32 @@ journalctl -u wechatinsight-api -n 100 --no-pager
 systemctl reset-failed wechatinsight-api && systemctl restart wechatinsight-api
 ```
 
+运维红线（2026-11-08 踩过）：
+
+1. **不要用 `sed -i` / 重定向改 `backend/.env`**。`sed -i` 会生成 root 属主的新文件，`EnvironmentFile=` 以 `wechat` 读取失败 → 服务起不来 → Nginx 返回 **502 HTML**（`Failed to load environment files: No such file or directory`）。改完必须 `chown wechat:wechat .env && chmod 600 .env`。
+2. **临时改配置用 systemd drop-in**，不动 `.env`：
+
+```bash
+mkdir -p /etc/systemd/system/wechatinsight-api.service.d
+cat > /etc/wechatinsight-fault.env <<'EOF'
+DEFAULT_PROVIDER=qovia
+EOF
+printf '[Service]\nEnvironmentFile=/etc/wechatinsight-fault.env\n' \
+  > /etc/systemd/system/wechatinsight-api.service.d/fault.conf
+systemctl daemon-reload && systemctl restart wechatinsight-api
+# 清理：删掉两个文件 + daemon-reload + reset-failed + restart
+```
+
+3. **启动频率限制**：`Restart=always` 遇到配置错误会无限重启（本次连续 27 次）。仓库提供 `deploy/systemd/wechatinsight-api.service.d/restart.conf`（60s 内最多 10 次），部署时一并复制：
+
+```bash
+mkdir -p /etc/systemd/system/wechatinsight-api.service.d
+cp deploy/systemd/wechatinsight-api.service.d/restart.conf /etc/systemd/system/wechatinsight-api.service.d/
+systemctl daemon-reload
+```
+
+4. 触发 `StartLimitBurst` 后必须 `systemctl reset-failed wechatinsight-api` 才能再启动；`systemctl show <unit> -p DropInPaths` 确认 drop-in 是否真的卸载。
+
 ## 11. 8.3 验收记录（2026-11-08）
 
 ### 11.1 冒烟结果
