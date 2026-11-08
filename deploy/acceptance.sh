@@ -132,7 +132,7 @@ else
     dsn="${DATABASE_URL/postgresql+psycopg2:/postgresql:}"
     dsn="${dsn/postgresql+psycopg:/postgresql:}"
 
-    dup_acc="$(psql "$dsn" -Atc 'select count(*) from (select provider, provider_account_id from wechat_accounts group by 1,2 having count(*)>1) x' 2>/dev/null)"
+    dup_acc="$(psql "$dsn" -Atc 'select count(*) from (select provider, provider_account_id from provider_account_mappings group by 1,2 having count(*)>1) x' 2>/dev/null)"
     dup_art="$(psql "$dsn" -Atc 'select count(*) from (select provider, normalized_url from wechat_articles group by 1,2 having count(*)>1) x' 2>/dev/null)"
     usage="$(psql "$dsn" -Atc 'select count(*) from api_usage_logs' 2>/dev/null)"
 
