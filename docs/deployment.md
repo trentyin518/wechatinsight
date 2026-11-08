@@ -72,7 +72,7 @@ backend/.venv/bin/python -m worker.main --interval 300
 - [x] 展示数据来源与更新时间
 - [x] 能记录数据源与调用成本
 - [x] 首页可搜索，结果支持分页，详情页正常
-- [ ] 第三方 API 故障不会导致整站不可用（未做故障注入验证）
+- [x] 第三方 API 故障不会导致整站不可用（故障注入验证，见 11.3）
 - [ ] 采集任务自动运行，失败可重试，重复任务不产生重复数据（worker 运行中，重试路径未验证）
 - [x] 可查看任务状态与 API 调用量/预估费用
 - [x] 前后端已部署，HTTPS 正常，数据库不暴露，密钥未泄漏（公网端口暂用 8443，见 10.5）
@@ -213,6 +213,38 @@ bash deploy/acceptance.sh
 
 1. **备案**：8443 为临时方案，备案通过后切回 443（见 10.5）。
 2. **Qovia 真实数据**：`DEFAULT_PROVIDER=mock`，充值后改 `qovia` 再跑一轮验收（成本/真实数据项）。
-3. **故障注入**：未验证第三方 API 故障时的降级行为。
-4. **Worker 重试路径**：未做失败重试的显式验证。
+3. **Worker 重试路径**：未做失败重试的显式线上验证（`tests/test_worker.py` 有覆盖）。
+4. **Nginx 5xx 非 JSON**：uvicorn 不可用时 Nginx 直接返回 502 HTML，前端需自行兜底（`proxy_intercept_errors` 可改成 JSON 错误页）。
+
+### 11.3 故障注入记录（2026-11-08）
+
+目的：验证「第三方 API 故障不会导致整站不可用」。
+
+方式：systemd drop-in 注入故障数据源（不修改 `.env`，避免属主/权限问题）：
+
+```bash
+cat > /etc/wechatinsight-fault.env <<'EOF'
+DEFAULT_PROVIDER=qovia
+QOVIA_API_KEY=invalid-for-fault-injection
+EOF
+mkdir -p /etc/systemd/system/wechatinsight-api.service.d
+printf '[Service]\nEnvironmentFile=/etc/wechatinsight-fault.env\n' \
+  > /etc/systemd/system/wechatinsight-api.service.d/fault.conf
+systemctl daemon-reload && systemctl restart wechatinsight-api
+```
+
+结果：
+
+| 请求 | 结果 |
+|---|---|
+| `GET /health` | 200 `{"status":"ok"}` |
+| 冷启动搜索 `?q=zzz-not-cached` | 502 JSON `{"error":{"code":"DATA_SOURCE_AUTH","message":"数据源鉴权失败。"}}` |
+| 缓存命中搜索 `?q=示例` | 200，返回本地缓存账号（未调用上游） |
+| `GET /api/v1/accounts/1` | 200 |
+
+单元测试固化：`backend/tests/test_provider_outage.py`（4 用例，覆盖 health 存活、冷搜索 503 信封、缓存不触达上游、详情可用），`pytest` 全量 42 passed。
+
+注意：`AppError.message` 直接返回给客户端，因此 provider 层必须抛**默认文案**（`raise DataSourceUnavailable()`），不得透传上游原文——`qovia.py` 已符合。
+
+清理：删除 drop-in 与 `/etc/wechatinsight-fault.env` 后 `daemon-reload && restart`，`/health` 回到 200、冷搜索回到 200 空结果。
 
