@@ -237,6 +237,8 @@ bash deploy/acceptance.sh
 
 ### 11.2 遗留项
 
+> 上线后的运营待办（备案、Vercel 指向、Qovia 真实数据、worker 重试）见 `docs/operations-todo.md`。
+
 1. **备案**：8443 为临时方案，备案通过后切回 443（见 10.5）。
 2. **Qovia 真实数据**：`DEFAULT_PROVIDER=mock`，充值后改 `qovia` 再跑一轮验收（成本/真实数据项）。
 3. **Worker 重试路径**：未做失败重试的显式线上验证（`tests/test_worker.py` 有覆盖）。
