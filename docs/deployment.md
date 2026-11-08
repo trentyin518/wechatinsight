@@ -211,8 +211,7 @@ bash deploy/acceptance.sh
 
 ### 11.2 遗留项
 
-1. **账号去重查询 WARN**：`acceptance.sh` 的账号去重 SQL 需与真实唯一键 `(provider, provider_account_id)` 对齐；定位命令：
-   `psql "$PGURL" -Atc 'select count(*) from (select provider, provider_account_id from wechat_accounts group by 1,2 having count(*)>1) x'`
+1. **账号去重查询 WARN**：账号映射唯一键在 `provider_account_mappings(provider, provider_account_id)`，`wechat_accounts` 本身没有 `provider` 列；脚本已按该表修正。
 2. **备案**：8443 为临时方案，备案通过后切回 443（见 10.5）。
 3. **Qovia 真实数据**：`DEFAULT_PROVIDER=mock`，充值后改 `qovia` 再跑一轮验收（成本/真实数据项）。
 4. **故障注入**：未验证第三方 API 故障时的降级行为。
