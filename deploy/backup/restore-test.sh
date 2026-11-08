@@ -17,6 +17,15 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/opt/wechat-insight/backend/.env}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/wechatinsight}"
 
+# Prefer a pg client at least as new as the server (Neon runs PG 18).
+for _pgbin in /usr/pgsql-18/bin /opt/pg18/usr/pgsql-18/bin; do
+    if [[ -x "$_pgbin/pg_restore" ]]; then
+        export PATH="$_pgbin:$PATH"
+        [[ -d "$_pgbin/../lib" ]] && export LD_LIBRARY_PATH="$_pgbin/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        break
+    fi
+done
+
 DUMP="${1:-$(ls -1t "$BACKUP_DIR"/wechatinsight-*.dump 2>/dev/null | head -1 || true)}"
 [[ -n "$DUMP" && -f "$DUMP" ]] || { echo "no dump found (arg or $BACKUP_DIR)" >&2; exit 2; }
 : "${RESTORE_DATABASE_URL:?set RESTORE_DATABASE_URL to an empty scratch database}"

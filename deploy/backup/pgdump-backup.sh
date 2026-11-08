@@ -7,6 +7,16 @@ ENV_FILE="${ENV_FILE:-/opt/wechat-insight/backend/.env}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/wechatinsight}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 
+# cron runs with a minimal PATH; prefer a client that is at least as new as the
+# server (Neon is on PG 18, so the distro's pg_dump 13 would abort).
+for _pgbin in /usr/pgsql-18/bin /opt/pg18/usr/pgsql-18/bin; do
+    if [[ -x "$_pgbin/pg_dump" ]]; then
+        export PATH="$_pgbin:$PATH"
+        [[ -d "$_pgbin/../lib" ]] && export LD_LIBRARY_PATH="$_pgbin/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        break
+    fi
+done
+
 # Load KEY=VALUE without shell-evaluating the file (DSNs contain & and %).
 while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
