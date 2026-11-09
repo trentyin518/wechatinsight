@@ -40,6 +40,33 @@ certbot renew --dry-run
 
 现状：后端公网地址是 `https://api.wechatinsight.com:8443`，需确认 Vercel 已同步。
 
+> **2026-11-09 事故记录：Vercel 全部部署 2 秒、域名返回平台 404**
+>
+> 根因：项目 Settings → Build & Development 里把 **Build Command / Install Command 的 Override 打开**了。
+> 打开后 Vercel 的 framework cross-check 会退回 `@vercel/static` 构建器（`detectedFramework: skipped`），
+> 产物只是源码目录的一份静态拷贝，`/` 自然 404；日志特征是 `Build Completed [52ms]` +
+> `Skipping cache upload because no files were prepared`。
+>
+> 修复：
+>
+> ```bash
+> # 1) 清掉三个覆盖项（API，也可在 dashboard 关掉 Override 开关）
+> #    buildCommand / installCommand / outputDirectory → null
+> #    nodeVersion 26.x → 22.x
+> # 2) 本地真实构建（~48s，产出 static/_next + functions/*.func）
+> cd frontend
+> npx vercel link --yes --project wechatinsight
+> npx vercel pull --yes --environment=production
+> npx vercel build --prod
+> ls .vercel/output/static .vercel/output/functions
+> # 3) 上传产物并确认域名
+> npx vercel deploy --prebuilt --prod
+> curl -sSI https://www.wechatinsight.com/
+> ```
+>
+> 之后 `rootDirectory=frontend` 保持不变，Git 集成构建即恢复正常。
+> 判断构建是否真的跑了：`vercel ls` 的 Duration 必须是 30s 以上，日志必须有 `Detected Next.js`。
+
 步骤：
 
 1. Vercel → 项目 → Settings → Environment Variables：`NEXT_PUBLIC_API_BASE=https://api.wechatinsight.com:8443`
