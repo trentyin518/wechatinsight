@@ -2,6 +2,21 @@
 
 > 部署到 Vercel / 云服务器需要人工持有账号与服务器资源，以下为可执行步骤清单。
 
+## 0. 当前线上形态（2026-11-11）
+
+| 项 | 值 |
+|---|---|
+| 前端 | Vercel，https://www.wechatinsight.com（apex 308 跳 www） |
+| 后端 API | 阿里云 ECS，https://api.topsaypan.com（443，已备案域名） |
+| 数据库 | Neon PostgreSQL |
+| Worker | 同 ECS，systemd `wechatinsight-worker` |
+
+注意：
+
+- `api.wechatinsight.com` 与 **8443 临时端口方案已废弃**。该域名未备案，跨境访问会被 reset，Vercel（美国）无法访问，这也是前端一度报「无法连接到后端服务」的根因。改用已备案的 `topsaypan.com` 后 443 全球可达。
+- nginx 配置见 `deploy/nginx/api.topsaypan.com.conf`，upstream 单独放在 `conf.d/00-upstream.conf`，避免删 vhost 时连带删掉上游定义。
+- 历史方案（备案未通过期间的 8443、`api.wechatinsight.com`）保留在 10.5 与 11 节作为记录，不要再照做。
+
 ## 1. 组件与位置
 
 | 组件 | 位置 |
