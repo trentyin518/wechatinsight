@@ -8,7 +8,7 @@ State machine:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -81,14 +81,58 @@ def next_pending(
     *,
     exclude_priorities: set[str] | None = None,
 ) -> SyncJob | None:
-    """Pick the highest-priority PENDING/RETRY job (A before B before C)."""
-    stmt = select(SyncJob).where(SyncJob.status.in_([JobStatus.PENDING, JobStatus.RETRY]))
+    """Pick the highest-priority PENDING job (A before B before C).
+
+    RETRY jobs are deliberately excluded: they are only eligible again once
+    their backoff has elapsed, see ``due_retries``.
+    """
+    stmt = select(SyncJob).where(SyncJob.status == JobStatus.PENDING)
     if job_type is not None:
         stmt = stmt.where(SyncJob.job_type == job_type)
     if exclude_priorities:
         stmt = stmt.where(SyncJob.priority.notin_(exclude_priorities))
     stmt = stmt.order_by(SyncJob.priority.asc(), SyncJob.id.asc()).limit(1)
     return session.scalar(stmt)
+
+
+RETRY_BASE_SECONDS = 30
+RETRY_MAX_SECONDS = 1800
+
+
+def retry_delay(retry_count: int) -> timedelta:
+    """Exponential backoff: 30s, 60s, 120s ... capped at 30 minutes."""
+    exponent = max(retry_count - 1, 0)
+    return timedelta(seconds=min(RETRY_BASE_SECONDS * (2**exponent), RETRY_MAX_SECONDS))
+
+
+def due_retries(
+    session: Session,
+    *,
+    exclude_priorities: set[str] | None = None,
+    limit: int = 50,
+    now: datetime | None = None,
+) -> list[SyncJob]:
+    """RETRY jobs whose backoff window has elapsed.
+
+    Without this a failing job is re-picked in the same drain loop, burning the
+    provider quota dozens of times per cycle.
+    """
+    now = now or datetime.now(timezone.utc)
+    stmt = select(SyncJob).where(SyncJob.status == JobStatus.RETRY)
+    if exclude_priorities:
+        stmt = stmt.where(SyncJob.priority.notin_(exclude_priorities))
+    stmt = stmt.order_by(SyncJob.priority.asc(), SyncJob.id.asc()).limit(limit * 4)
+
+    ready: list[SyncJob] = []
+    for job in session.scalars(stmt).all():
+        last_attempt = job.updated_at
+        if last_attempt.tzinfo is None:
+            last_attempt = last_attempt.replace(tzinfo=timezone.utc)
+        if now - last_attempt >= retry_delay(job.retry_count):
+            ready.append(job)
+            if len(ready) >= limit:
+                break
+    return ready
 
 
 def start(session: Session, job: SyncJob) -> None:

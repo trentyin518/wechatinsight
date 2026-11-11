@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -42,10 +42,15 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
 
-    # HEAD is answered too: uptime monitors commonly probe /health with HEAD.
-    @app.api_route("/health", methods=["GET", "HEAD"], tags=["health"])
+    @app.get("/health", tags=["health"])
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Uptime monitors commonly probe /health with HEAD; keep it out of the schema
+    # so it does not collide with the GET operation id.
+    @app.head("/health", include_in_schema=False)
+    def health_head() -> Response:
+        return Response(status_code=200)
 
     @app.exception_handler(AppError)
     async def handle_app_error(_request: Request, exc: AppError) -> JSONResponse:

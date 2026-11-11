@@ -91,10 +91,17 @@ async def run_pending(
     )
     exclude = {Priority.C} if blocked else None
     processed = 0
+    # Fresh work first.
     while processed < max_jobs:
         job = jobs_repo.next_pending(session, exclude_priorities=exclude)
         if job is None:
             break
+        await run_job(session, job, provider)
+        processed += 1
+    # Retries only once their backoff has elapsed; never straight after failing.
+    for job in jobs_repo.due_retries(
+        session, exclude_priorities=exclude, limit=max_jobs - processed
+    ):
         await run_job(session, job, provider)
         processed += 1
     return processed

@@ -31,6 +31,11 @@ logger = logging.getLogger("wechat_insight.scheduler")
 # Coarse tier intervals (hours). Real frequencies are tuned after Phase 0.
 TIER_INTERVAL_HOURS = {Priority.A: 6, Priority.B: 12, Priority.C: 24}
 
+# After a job exhausts its retries, stop re-enqueueing the same target for a
+# while. Without this a permanently failing endpoint (e.g. a metrics route the
+# provider does not expose) spawns a fresh job every cycle forever.
+FAILED_COOLDOWN = timedelta(hours=6)
+
 
 def _active_job(session: Session, job_type: str, target_id: int) -> bool:
     stmt = select(SyncJob.id).where(
@@ -38,7 +43,19 @@ def _active_job(session: Session, job_type: str, target_id: int) -> bool:
         SyncJob.target_id == target_id,
         SyncJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING, JobStatus.RETRY]),
     )
-    return session.scalar(stmt) is not None
+    if session.scalar(stmt) is not None:
+        return True
+    recent_failure = (
+        select(SyncJob.id)
+        .where(
+            SyncJob.job_type == job_type,
+            SyncJob.target_id == target_id,
+            SyncJob.status == JobStatus.FAILED,
+            SyncJob.finished_at >= datetime.now(timezone.utc) - FAILED_COOLDOWN,
+        )
+        .limit(1)
+    )
+    return session.scalar(recent_failure) is not None
 
 
 def _is_due(account: WechatAccount, now: datetime) -> bool:
