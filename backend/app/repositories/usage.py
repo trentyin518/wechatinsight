@@ -27,7 +27,11 @@ def log_usage(
     job_id: int | None = None,
 ) -> ApiUsageLog:
     if estimated_cost is None:
-        estimated_cost = round(request_units * DEFAULT_UNIT_COST_USD, 6)
+        # The mock adapter returns fabricated data and is never billed; counting
+        # it would let the worker's periodic sync drain the real budget.
+        estimated_cost = (
+            0.0 if provider == "mock" else round(request_units * DEFAULT_UNIT_COST_USD, 6)
+        )
     log = ApiUsageLog(
         provider=provider,
         endpoint=endpoint,
