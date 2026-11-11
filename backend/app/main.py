@@ -42,7 +42,8 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
 
-    @app.get("/health", tags=["health"])
+    # HEAD is answered too: uptime monitors commonly probe /health with HEAD.
+    @app.api_route("/health", methods=["GET", "HEAD"], tags=["health"])
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
