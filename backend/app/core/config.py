@@ -53,6 +53,10 @@ class Settings:
     qovia_base_url: str
     xmedi_api_key: str
     xmedi_base_url: str
+    # Search-result cache: identical keywords are answered from the DB instead of
+    # hitting a billed provider again. Empty results are kept longer on purpose.
+    search_cache_ttl_hours: int = 24
+    empty_search_cache_ttl_hours: int = 168
 
     @property
     def is_production(self) -> bool:
@@ -76,4 +80,6 @@ def get_settings() -> Settings:
         qovia_base_url=os.getenv("QOVIA_BASE_URL", "https://api.qovia.example.com"),
         xmedi_api_key=os.getenv("XMEDI_API_KEY", ""),
         xmedi_base_url=os.getenv("XMEDI_BASE_URL", "https://api.xmedi.example.com"),
+        search_cache_ttl_hours=_int(os.getenv("SEARCH_CACHE_TTL_HOURS"), 24),
+        empty_search_cache_ttl_hours=_int(os.getenv("EMPTY_SEARCH_CACHE_TTL_HOURS"), 168),
     )

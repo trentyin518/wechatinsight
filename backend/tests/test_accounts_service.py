@@ -31,11 +31,12 @@ async def test_rate_limit_blocks_repeated_cold_start(session):
     rate_limiter.reset()
     settings = _settings(search_rate_limit_per_minute=1)
     provider = MockProvider()
-    # Keyword with no mock matches still exercises the cold-start path.
+    # Two *different* keywords with no mock matches both exercise the cold-start
+    # path; reusing one keyword would hit the search cache instead.
     await accounts_service.search_accounts(
-        session, "no-match-keyword", 1, 20, provider=provider, settings=settings
+        session, "no-match-keyword-a", 1, 20, provider=provider, settings=settings
     )
     with pytest.raises(RateLimited):
         await accounts_service.search_accounts(
-            session, "no-match-keyword", 1, 20, provider=provider, settings=settings
+            session, "no-match-keyword-b", 1, 20, provider=provider, settings=settings
         )

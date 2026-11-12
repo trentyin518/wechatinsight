@@ -17,6 +17,14 @@
 - nginx 配置见 `deploy/nginx/api.topsaypan.com.conf`，upstream 单独放在 `conf.d/00-upstream.conf`，避免删 vhost 时连带删掉上游定义。
 - 历史方案（备案未通过期间的 8443、`api.wechatinsight.com`）保留在 10.5 与 11 节作为记录，不要再照做。
 
+成本控制：
+
+- 搜索先查本地 `wechat_accounts`，命中即返回，不产生上游调用。
+- 本地无结果时查 `search_cache`（按 provider + 规范化关键词），命中即返回，**不占限流额度、不产生费用**；空结果也会缓存。
+- 只有缓存缺失或过期才调用 provider，单次调用后把结果 id 写入 `search_cache`。
+- `SEARCH_CACHE_TTL_HOURS` 默认 24，`EMPTY_SEARCH_CACHE_TTL_HOURS` 默认 168（空结果更久，因为用户会反复搜同一个不存在的名字）。
+- 迁移：`alembic upgrade head`（0002_search_cache）。
+
 ## 1. 组件与位置
 
 | 组件 | 位置 |

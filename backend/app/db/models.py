@@ -212,3 +212,28 @@ class ApiUsageLog(Base):
     __table_args__ = (
         Index("idx_api_usage_provider_time", "provider", "request_time"),
     )
+
+
+class SearchCache(Base):
+    """Keyword-level cache of provider search results (including empty ones).
+
+    Cold-start searches are billed per call, so remembering "this keyword was
+    already looked up" — even when it returned nothing — is what stops the same
+    query from costing money twice.
+    """
+
+    __tablename__ = "search_cache"
+
+    id: Mapped[int] = mapped_column(bigint_pk(), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    keyword: Mapped[str] = mapped_column(String(200), nullable=False)
+    account_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    total: Mapped[int] = mapped_column(nullable=False, default=0)
+    fetched_at: Mapped[datetime] = mapped_column(
+        timestamptz(), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("provider", "keyword", name="uq_search_cache_provider_keyword"),
+        Index("idx_search_cache_fetched_at", "fetched_at"),
+    )
