@@ -299,3 +299,59 @@ systemctl daemon-reload && systemctl restart wechatinsight-api
 
 清理：删除 drop-in 与 `/etc/wechatinsight-fault.env` 后 `daemon-reload && restart`，`/health` 回到 200、冷搜索回到 200 空结果。
 
+## 12. 登录与信息登记（Auth & Onboarding）
+
+> 迁移版本 `0003_auth_onboarding`。
+
+### 12.1 新增后端环境变量（`/opt/wechat-insight/backend/.env`）
+
+```
+AUTH_ENFORCED=true
+SESSION_SECRET=<强随机值，请在更新时轮换并让旧会话失效>
+SESSION_TTL_HOURS=168
+SESSION_COOKIE_NAME=wi_session
+FRONTEND_BASE_URL=https://www.wechatinsight.com
+WECHAT_APP_ID=...
+WECHAT_APP_SECRET=...
+WECHAT_REDIRECT_URI=https://api.topsaypan.com/api/v1/auth/wechat/callback
+WECHAT_STATE_TTL_SECONDS=600
+PROOF_MAX_MB=5
+UPLOAD_DIR=/var/lib/wechatinsight/uploads
+ADMIN_PHONE=...
+ADMIN_PASSWORD=...
+```
+
+> `.env` 修改权限红线见 10.6：改完必须 `chown wechat:wechat .env && chmod 600 .env`，勿用 `sed -i`。
+
+### 12.2 上传目录持久化
+
+```bash
+sudo mkdir -p /var/lib/wechatinsight/uploads
+sudo chown wechat:wechat /var/lib/wechatinsight/uploads
+```
+
+纳入备份（见 6 节）；**不要**通过 Nginx 静态暴露该目录，证明文件仅经 `require_admin` 接口受控读取。
+
+### 12.3 微信扫码回调
+
+- 需微信开放平台「网站应用」审核通过、已备案域名与授权回调域；回调地址设为 `WECHAT_REDIRECT_URI`。
+- 回调处理完成后 302 跳回 `FRONTEND_BASE_URL`。
+- 生产禁用 mock 登录；未配置真实凭据时微信扫码不可用（账号密码仍可用）。
+
+### 12.4 前端（Vercel）
+
+- 代理目标：`API_PROXY_TARGET=https://api.topsaypan.com`（Next `rewrites` 构建期读取）。
+- 门禁：`NEXT_PUBLIC_AUTH_ENFORCED=true`、`NEXT_PUBLIC_SESSION_COOKIE_NAME=wi_session`。
+- 仍保留 `NEXT_PUBLIC_API_BASE` 供 SSR 直连。
+
+### 12.5 灰度与回滚
+
+- 先 `AUTH_ENFORCED=false` + `NEXT_PUBLIC_AUTH_ENFORCED=false` 发布端点与 UI，验证登录/登记/审核闭环。
+- 验证后两者置 `true`，重启后端 / 重新部署前端开启强制。
+- 回滚：两者置回 `false` 即恢复公开读取（无需迁移回退，数据为增量）。
+
+### 12.6 准入验收
+
+- 未登录 `GET /api/v1/accounts` → `401`；登录但未通过审核 → `403`（`ONBOARDING_*` 错误码）；`GET /health` 仍 `200`。
+- 管理员通过后用户可访问数据；驳回后用户可修改重提。
+

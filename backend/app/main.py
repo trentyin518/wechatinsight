@@ -25,6 +25,19 @@ async def lifespan(app: FastAPI):
         from app.db.session import init_db
 
         init_db()
+    # Idempotently bootstrap the review admin when configured. Best-effort so a
+    # missing table on a fresh prod DB (pre-migration) does not block startup.
+    try:
+        from app.db.session import SessionLocal
+        from app.services.bootstrap import ensure_admin
+
+        db = SessionLocal()
+        try:
+            ensure_admin(db, settings)
+        finally:
+            db.close()
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("admin bootstrap skipped")
     yield
 
 

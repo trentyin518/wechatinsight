@@ -79,3 +79,90 @@ export interface ArticleDetail {
   is_paid: boolean | null;
   metrics: MetricPoint | null;
 }
+
+export type OnboardingStatus = "none" | "pending" | "approved" | "rejected";
+
+export interface UserOut {
+  id: number;
+  phone: string | null;
+  display_name: string | null;
+  is_admin: boolean;
+  onboarding_status: OnboardingStatus;
+  created_at: string;
+}
+
+export interface MeResponse {
+  user: UserOut;
+}
+
+export interface WechatAuthorizeResponse {
+  authorize_url: string;
+  configured: boolean;
+  mock_enabled: boolean;
+}
+
+export interface ProofUploadResponse {
+  proof_id: number;
+  mime_type: string;
+  size_bytes: number;
+  original_name: string | null;
+}
+
+export interface SubmissionSummary {
+  id: number;
+  status: OnboardingStatus;
+  reject_reason: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+}
+
+export interface OnboardingStatusResponse {
+  status: OnboardingStatus;
+  submission: SubmissionSummary | null;
+}
+
+export interface OnboardingSubmitInput {
+  source_channel: string;
+  source_other?: string;
+  user_type: string;
+  user_type_other?: string;
+  company_name: string;
+  contact_name: string;
+  contact_phone: string;
+  needs?: string;
+  proof_id: number;
+}
+
+export interface SubmissionOut {
+  id: number;
+  user_id: number;
+  user_phone: string | null;
+  user_display_name: string | null;
+  status: OnboardingStatus;
+  source_channel: string | null;
+  source_other: string | null;
+  user_type: string | null;
+  user_type_other: string | null;
+  company_name: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  needs: string | null;
+  proof_id: number | null;
+  reject_reason: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+}
+
+export interface SubmissionListResponse {
+  items: SubmissionOut[];
+  total: number;
+}
+
+export interface OverviewResponse {
+  accounts_count: number;
+  articles_count: number;
+  metrics_count: number;
+  providers_count: number;
+  last_updated_at: string | null;
+  recent_accounts: AccountOut[];
+}

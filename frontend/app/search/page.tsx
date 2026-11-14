@@ -5,12 +5,14 @@ import { Pagination } from "@/components/Pagination";
 import { SearchForm } from "@/components/SearchForm";
 import { StateMessage } from "@/components/StateMessage";
 import { ApiError, searchAccounts } from "@/lib/api";
+import { requireApprovedOrRedirect } from "@/lib/guard";
 
 interface SearchPageProps {
   searchParams: Promise<{ q?: string; page?: string }>;
 }
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
+  await requireApprovedOrRedirect();
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);

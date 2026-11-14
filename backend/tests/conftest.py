@@ -21,6 +21,7 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{_DB_FILE}"
 os.environ.setdefault("DEFAULT_PROVIDER", "mock")
 os.environ.setdefault("ALLOW_COLD_START_SEARCH", "true")
+os.environ.setdefault("UPLOAD_DIR", str(Path(tempfile.gettempdir()) / "wechat_insight_uploads"))
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

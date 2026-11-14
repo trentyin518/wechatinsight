@@ -48,6 +48,121 @@ class Priority:
     C = "C"
 
 
+class OnboardingStatus:
+    NONE = "none"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+    ALL = {NONE, PENDING, APPROVED, REJECTED}
+
+
+class User(Base):
+    """A platform user. May authenticate by phone/password and/or WeChat."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(bigint_pk(), primary_key=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    wechat_unionid: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
+    wechat_openid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    onboarding_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=OnboardingStatus.NONE
+    )
+
+    created_at: Mapped[datetime] = mapped_column(timestamptz(), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamptz(), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
+    submissions: Mapped[list["OnboardingSubmission"]] = relationship(
+        back_populates="user", foreign_keys="OnboardingSubmission.user_id"
+    )
+
+    __table_args__ = (
+        Index("idx_users_phone", "phone"),
+        Index("idx_users_wechat_openid", "wechat_openid"),
+    )
+
+
+class UserSession(Base):
+    """A revocable server-side session. Only the token *hash* is stored."""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(bigint_pk(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+
+    expires_at: Mapped[datetime] = mapped_column(timestamptz(), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(timestamptz(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(timestamptz(), server_default=func.now(), nullable=False)
+
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="sessions")
+
+    __table_args__ = (Index("idx_user_sessions_user", "user_id"),)
+
+
+class OnboardingProof(Base):
+    """A proof file uploaded by a user, linked to a submission on submit."""
+
+    __tablename__ = "onboarding_proofs"
+
+    id: Mapped[int] = mapped_column(bigint_pk(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    stored_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(timestamptz(), server_default=func.now(), nullable=False)
+
+    __table_args__ = (Index("idx_onboarding_proofs_user", "user_id"),)
+
+
+class OnboardingSubmission(Base):
+    """A request for access with the review lifecycle. History is preserved."""
+
+    __tablename__ = "onboarding_submissions"
+
+    id: Mapped[int] = mapped_column(bigint_pk(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=OnboardingStatus.PENDING)
+
+    source_channel: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_other: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    user_type_other: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    company_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    needs: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    proof_id: Mapped[int | None] = mapped_column(ForeignKey("onboarding_proofs.id"), nullable=True)
+
+    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    submitted_at: Mapped[datetime] = mapped_column(timestamptz(), server_default=func.now(), nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(timestamptz(), nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="submissions", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("idx_onboarding_submissions_user", "user_id"),
+        Index("idx_onboarding_submissions_status", "status"),
+    )
+
+
 class WechatAccount(Base):
     __tablename__ = "wechat_accounts"
 

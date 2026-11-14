@@ -69,3 +69,21 @@ class ProviderError(AppError):
     status_code = 502
     code = "DATA_SOURCE_ERROR"
     default_message = "数据源返回异常，请稍后重试。"
+
+
+class Unauthenticated(AppError):
+    status_code = 401
+    code = "UNAUTHENTICATED"
+    default_message = "请先登录。"
+
+
+class Forbidden(AppError):
+    status_code = 403
+    code = "FORBIDDEN"
+    default_message = "没有权限执行该操作。"
+
+
+class Conflict(AppError):
+    status_code = 409
+    code = "CONFLICT"
+    default_message = "操作与当前状态冲突。"

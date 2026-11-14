@@ -5,12 +5,14 @@ import { MetricGrid } from "@/components/MetricGrid";
 import { StateMessage } from "@/components/StateMessage";
 import { ApiError, getArticle, getArticleMetrics } from "@/lib/api";
 import { formatDateTime, formatMetric, formatObservedChange, providerLabel } from "@/lib/format";
+import { requireApprovedOrRedirect } from "@/lib/guard";
 
 interface ArticlePageProps {
   params: Promise<{ id: string }>;
 }
 
 export default async function ArticlePage({ params }: ArticlePageProps) {
+  await requireApprovedOrRedirect();
   const { id } = await params;
 
   try {

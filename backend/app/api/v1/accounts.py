@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_approved
 from app.core.errors import NotFoundError
-from app.db.models import ArticleMetric, WechatAccount
+from app.db.models import ArticleMetric, User, WechatAccount
 from app.schemas.accounts import AccountDetail, AccountOut, AccountSearchResponse
 from app.schemas.articles import ArticleListItem, ArticleListResponse
 from app.services import accounts as accounts_service
@@ -66,6 +66,7 @@ async def search_accounts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
+    _user: User | None = Depends(require_approved),
 ) -> AccountSearchResponse:
     result = await accounts_service.search_accounts(session, q, page, page_size)
     session.commit()
@@ -78,7 +79,11 @@ async def search_accounts(
 
 
 @router.get("/accounts/{account_id}", response_model=AccountDetail)
-def get_account(account_id: int, session: Session = Depends(get_db)) -> AccountDetail:
+def get_account(
+    account_id: int,
+    session: Session = Depends(get_db),
+    _user: User | None = Depends(require_approved),
+) -> AccountDetail:
     account = accounts_service.get_account(session, account_id)
     if account is None:
         raise NotFoundError("公众号不存在。")
@@ -91,6 +96,7 @@ def list_account_articles(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
+    _user: User | None = Depends(require_approved),
 ) -> ArticleListResponse:
     account = accounts_service.get_account(session, account_id)
     if account is None:

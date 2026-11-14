@@ -5,6 +5,7 @@ import { Pagination } from "@/components/Pagination";
 import { StateMessage } from "@/components/StateMessage";
 import { ApiError, getAccount, getAccountArticles } from "@/lib/api";
 import { formatMetric } from "@/lib/format";
+import { requireApprovedOrRedirect } from "@/lib/guard";
 
 interface AccountPageProps {
   params: Promise<{ id: string }>;
@@ -12,6 +13,7 @@ interface AccountPageProps {
 }
 
 export default async function AccountPage({ params, searchParams }: AccountPageProps) {
+  await requireApprovedOrRedirect();
   const { id } = await params;
   const sp = await searchParams;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);

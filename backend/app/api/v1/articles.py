@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_approved
 from app.core.errors import NotFoundError
-from app.db.models import ArticleMetric
+from app.db.models import ArticleMetric, User
 from app.repositories import articles as articles_repo
 from app.schemas.articles import (
     ArticleDetail,
@@ -34,7 +34,11 @@ def _metric_point(metric: ArticleMetric) -> MetricPoint:
 
 
 @router.get("/articles/{article_id}", response_model=ArticleDetail)
-def get_article(article_id: int, session: Session = Depends(get_db)) -> ArticleDetail:
+def get_article(
+    article_id: int,
+    session: Session = Depends(get_db),
+    _user: User | None = Depends(require_approved),
+) -> ArticleDetail:
     found = articles_service.get_article(session, article_id)
     if found is None:
         raise NotFoundError("文章不存在。")
@@ -57,7 +61,9 @@ def get_article(article_id: int, session: Session = Depends(get_db)) -> ArticleD
 
 @router.get("/articles/{article_id}/metrics", response_model=MetricsHistoryResponse)
 def get_article_metrics(
-    article_id: int, session: Session = Depends(get_db)
+    article_id: int,
+    session: Session = Depends(get_db),
+    _user: User | None = Depends(require_approved),
 ) -> MetricsHistoryResponse:
     if articles_repo.get_by_id(session, article_id) is None:
         raise NotFoundError("文章不存在。")

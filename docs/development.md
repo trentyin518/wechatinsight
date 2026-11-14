@@ -65,6 +65,26 @@ npm run dev        # http://localhost:3000
 
 前端通过 `NEXT_PUBLIC_API_BASE`（默认 `http://localhost:8000`）访问后端。
 
+## 4.1 登录与信息登记（认证 + 准入）
+
+后端已内置手机号+密码、微信扫码（含 mock 回退）登录与信息登记审核。默认 `AUTH_ENFORCED=false` 时**不强制**（数据接口仍公开），便于先上线再灰度。
+
+- 数据库：迁移 `0003_auth_onboarding`（`alembic upgrade head`）新增 `users / user_sessions / onboarding_proofs / onboarding_submissions`。
+- 密码：PBKDF2-HMAC-SHA256（标准库，无额外依赖）。
+- 会话：登录写 `HttpOnly` Cookie（`SESSION_COOKIE_NAME`，默认 `wi_session`），仅存令牌哈希、可撤销。
+- 前端同源代理：`frontend/next.config.mjs` 用 `rewrites` 把 `/api/*` 代理到后端（`API_PROXY_TARGET`，默认 `http://localhost:8000`），Cookie 落在 `:3000` 同源；Server Component 读 Cookie 并转发到后端。
+- 管理员引导：`.env` 设 `ADMIN_PHONE`/`ADMIN_PASSWORD`，启动时幂等创建管理员，用于审核（`/admin/reviews`）。
+- 上传目录：`UPLOAD_DIR`（默认 `backend/uploads`），证明文件经鉴权接口受控读取，不静态暴露。
+- 微信扫码：配置 `WECHAT_APP_ID/WECHAT_APP_SECRET/WECHAT_REDIRECT_URI` 启用真实 OAuth2；未配置且非生产时登录页显示「模拟微信登录」。
+
+**打开强制登录（灰度）**：
+
+1. 后端 `.env`：`AUTH_ENFORCED=true` 并重启 API（数据接口要求登录 + 审核通过）。
+2. 前端构建变量：`NEXT_PUBLIC_AUTH_ENFORCED=true`（控制 `middleware` 与页面门禁，重建生效）。
+3. 回滚：两者改回 `false` 即恢复公开访问（无破坏性迁移）。
+
+端到端自测（mock）：注册/登录 → 首次引导 `/onboarding` 填表+上传 → `/onboarding/pending` → 管理员 `/admin/reviews` 通过 → 首页可用；驳回则 `/onboarding/rejected` 可重提。
+
 ## 5. 测试
 
 ```bash

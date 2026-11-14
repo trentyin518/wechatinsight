@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { HeaderAuth } from "@/components/HeaderAuth";
+
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,9 +21,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link className="brand" href="/">
               微信洞察<span className="brand-dot">·</span>
             </Link>
-            <nav className="nav">
-              <Link href="/">搜索</Link>
-            </nav>
+            <HeaderAuth />
           </div>
         </header>
         <main className="container main">{children}</main>

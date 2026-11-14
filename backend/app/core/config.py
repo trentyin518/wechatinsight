@@ -58,6 +58,27 @@ class Settings:
     search_cache_ttl_hours: int = 24
     empty_search_cache_ttl_hours: int = 168
 
+    # Authentication & onboarding. AUTH_ENFORCED gates whether data endpoints
+    # require an approved session; it defaults to False so the endpoints and UI
+    # can ship first, then be switched on (and rolled back) without a migration.
+    auth_enforced: bool = False
+    session_ttl_hours: int = 168
+    session_cookie_name: str = "wi_session"
+    session_secret: str = "dev-insecure-change-me"
+    frontend_base_url: str = "http://localhost:3000"
+    # WeChat 网站应用 OAuth2. When app_id/secret are missing, mock login is used
+    # (non-production only).
+    wechat_app_id: str = ""
+    wechat_app_secret: str = ""
+    wechat_redirect_uri: str = "http://localhost:8000/api/v1/auth/wechat/callback"
+    wechat_state_ttl_seconds: int = 600
+    # Onboarding proof uploads.
+    proof_max_mb: int = 5
+    upload_dir: str = ""
+    # Idempotently bootstrapped admin (used to review onboarding submissions).
+    admin_phone: str = ""
+    admin_password: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
@@ -82,4 +103,19 @@ def get_settings() -> Settings:
         xmedi_base_url=os.getenv("XMEDI_BASE_URL", "https://api.xmedi.example.com"),
         search_cache_ttl_hours=_int(os.getenv("SEARCH_CACHE_TTL_HOURS"), 24),
         empty_search_cache_ttl_hours=_int(os.getenv("EMPTY_SEARCH_CACHE_TTL_HOURS"), 168),
+        auth_enforced=_bool(os.getenv("AUTH_ENFORCED"), False),
+        session_ttl_hours=_int(os.getenv("SESSION_TTL_HOURS"), 168),
+        session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "wi_session"),
+        session_secret=os.getenv("SESSION_SECRET", "dev-insecure-change-me"),
+        frontend_base_url=os.getenv("FRONTEND_BASE_URL") or (origins[0] if origins else "http://localhost:3000"),
+        wechat_app_id=os.getenv("WECHAT_APP_ID", ""),
+        wechat_app_secret=os.getenv("WECHAT_APP_SECRET", ""),
+        wechat_redirect_uri=os.getenv(
+            "WECHAT_REDIRECT_URI", "http://localhost:8000/api/v1/auth/wechat/callback"
+        ),
+        wechat_state_ttl_seconds=_int(os.getenv("WECHAT_STATE_TTL_SECONDS"), 600),
+        proof_max_mb=_int(os.getenv("PROOF_MAX_MB"), 5),
+        upload_dir=os.getenv("UPLOAD_DIR") or str(BACKEND_DIR / "uploads"),
+        admin_phone=os.getenv("ADMIN_PHONE", ""),
+        admin_password=os.getenv("ADMIN_PASSWORD", ""),
     )
