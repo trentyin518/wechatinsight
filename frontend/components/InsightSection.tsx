@@ -56,7 +56,7 @@ export function InsightSection({
   ];
 
   return (
-    <section className="section">
+    <section className="section" id="insight">
       <div className="insight-head">
         <h2 className="insight-title">洞察品牌营销数据</h2>
         <p className="insight-sub">

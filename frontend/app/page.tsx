@@ -3,41 +3,66 @@ import Link from "next/link";
 import { DataProvenance } from "@/components/DataProvenance";
 import { InsightSection } from "@/components/InsightSection";
 import { ValueCards } from "@/components/ValueCards";
-import { getServerOverview } from "@/lib/api";
+import { getServerCurrentUser, getServerOverview } from "@/lib/api";
 
 const CATEGORIES = ["科技", "财经", "生活方式", "教育", "健康"];
 
 export default async function HomePage() {
-  const overview = await getServerOverview();
+  const [overview, user] = await Promise.all([getServerOverview(), getServerCurrentUser()]);
   const recents = overview?.recent_accounts ?? [];
 
   return (
     <>
-      <section className="landing-hero">
-        <div className="landing-badges">
-          <span className="pill">微信公众号数据</span>
-          <span className="pill">真实可溯源</span>
-          <span className="pill">缺失不等于 0</span>
+      <section className="hero-dark">
+        <div className="hero-dark-inner">
+          <h1>新媒体广告投放及品牌营销服务</h1>
+          <p className="hero-dark-sub">
+            海量KOL资源对接，数据赋能品牌方精准营销，让广告投放更高效
+          </p>
+          {user ? (
+            <a className="btn-use" href="#ad-value">
+              立即使用
+            </a>
+          ) : (
+            <Link className="btn-use" href="/login">
+              立即使用
+            </Link>
+          )}
         </div>
-        <h1>搜索公众号，查看真实可获取的数据</h1>
-        <p className="landing-sub">
-          查询公众号资料与历史文章，浏览数据源实际提供的阅读量、点赞量与在看数。平台只展示已收录账号，
-          并明确标注数据来源与采集时间——缺失的指标不会显示为 0。
-        </p>
-        <div className="landing-cta">
-          <Link className="btn btn-primary" href="/login">
-            登录 / 注册
-          </Link>
-          <Link className="btn" href="#categories">
-            按分类浏览
-          </Link>
+        <div className="hero-tabs">
+          <a className="hero-tab" href="#ad-value">
+            <span className="hero-tab-icon">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
+                <rect x="4" y="4" width="16" height="16" rx="4" />
+                <path d="M12 8l1.3 2.6 2.9.4-2.1 2 .5 2.9L12 14.7 9.4 15.9l.5-2.9-2.1-2 2.9-.4L12 8Z" />
+              </svg>
+            </span>
+            <span>投放评估</span>
+          </a>
+          <a className="hero-tab" href="#insight">
+            <span className="hero-tab-icon">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
+                <rect x="3" y="4" width="18" height="13" rx="2" />
+                <path d="M7 13l3-3 2.5 2 3.5-4" />
+                <path d="M9 21h6M12 17v4" />
+              </svg>
+            </span>
+            <span>洞察营销</span>
+          </a>
+          <span className="hero-tab hero-tab-disabled" aria-disabled="true">
+            <span className="hero-tab-icon">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
+                <circle cx="12" cy="12" r="7" />
+                <circle cx="12" cy="12" r="2" />
+                <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+              </svg>
+            </span>
+            <span>行业聚焦</span>
+          </span>
         </div>
-        <p className="muted small" style={{ marginTop: 12 }}>
-          搜索与数据功能需登录并通过信息登记审核后使用。
-        </p>
       </section>
 
-      <section className="section">
+      <section className="section" id="ad-value">
         <div className="value-head">
           <h2 className="value-title-h">社媒账号广告投放价值评估</h2>
           <p className="value-sub">

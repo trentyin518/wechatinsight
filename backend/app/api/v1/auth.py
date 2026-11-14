@@ -170,7 +170,9 @@ async def wechat_callback(
     user = _upsert_wechat_user(
         db, unionid=identity.unionid, openid=identity.openid, nickname=identity.nickname
     )
-    redirect = RedirectResponse(url=settings.frontend_base_url, status_code=302)
+    redirect = RedirectResponse(
+        url=f"{settings.frontend_base_url.rstrip('/')}/onboarding", status_code=302
+    )
     _issue_session(redirect, db, request, user)
     db.commit()
     return redirect

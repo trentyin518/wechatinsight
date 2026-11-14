@@ -1081,3 +1081,165 @@ a.orbit-center {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* --- Dark hero (marketing landing) --- */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+#ad-value,
+#insight {
+  scroll-margin-top: 84px;
+}
+
+.hero-dark {
+  position: relative;
+  isolation: isolate;
+  margin-top: -40px;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  width: 100vw;
+  padding: 88px 24px 60px;
+  overflow: hidden;
+  text-align: center;
+  color: #ffffff;
+  background:
+    radial-gradient(1000px 480px at 16% -12%, rgba(59, 130, 246, 0.32), transparent 60%),
+    radial-gradient(900px 520px at 88% 8%, rgba(16, 185, 129, 0.24), transparent 62%),
+    linear-gradient(180deg, #0b1324 0%, #0a0f1a 100%);
+}
+
+.hero-dark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 38%, #000 28%, transparent 74%);
+  mask-image: radial-gradient(ellipse at 50% 38%, #000 28%, transparent 74%);
+}
+
+.hero-dark::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(120% 90% at 50% 130%, rgba(16, 185, 129, 0.12), transparent 60%);
+}
+
+.hero-dark-inner {
+  position: relative;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.hero-dark h1 {
+  font-size: 2.5rem;
+  line-height: 1.25;
+  margin: 0 0 16px;
+  font-weight: 700;
+}
+
+.hero-dark-sub {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 1.05rem;
+  max-width: 640px;
+  margin: 0 auto 30px;
+}
+
+.btn-use {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 13px 36px;
+  border-radius: 999px;
+  background: #10b981;
+  color: #04231a;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.35);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.btn-use:hover {
+  background: #34d399;
+  transform: translateY(-1px);
+}
+
+.hero-tabs {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 72px;
+  margin-top: 60px;
+  flex-wrap: wrap;
+}
+
+.hero-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.hero-tab:hover {
+  color: #ffffff;
+  transform: translateY(-2px);
+}
+
+.hero-tab-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(16, 185, 129, 0.6);
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hero-tab:hover .hero-tab-icon {
+  border-color: #34d399;
+  color: #34d399;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.14);
+}
+
+.hero-tab-disabled {
+  cursor: default;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.hero-tab-disabled:hover {
+  color: rgba(255, 255, 255, 0.6);
+  transform: none;
+}
+
+.hero-tab-disabled .hero-tab-icon {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+@media (max-width: 680px) {
+  .hero-dark {
+    padding: 60px 20px 48px;
+  }
+  .hero-dark h1 {
+    font-size: 1.9rem;
+  }
+  .hero-tabs {
+    gap: 40px;
+    margin-top: 44px;
+  }
+}
