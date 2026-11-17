@@ -24,7 +24,13 @@ const USER_TYPES = [
   { value: "other", label: "其他" },
 ];
 
-export function OnboardingForm({ rejectedReason }: { rejectedReason?: string | null }) {
+export function OnboardingForm({
+  rejectedReason,
+  proofRequired = true,
+}: {
+  rejectedReason?: string | null;
+  proofRequired?: boolean;
+}) {
   const router = useRouter();
   const [sourceChannel, setSourceChannel] = useState("search_engine");
   const [sourceOther, setSourceOther] = useState("");
@@ -64,7 +70,7 @@ export function OnboardingForm({ rejectedReason }: { rejectedReason?: string | n
     if (!companyName.trim()) return "请填写公司名字。";
     if (!contactName.trim()) return "请填写您的名字。";
     if (!contactPhone.trim()) return "请填写您的联系电话。";
-    if (!proofId) return "请上传证明材料。";
+    if (proofRequired && !proofId) return "请上传证明材料。";
     if (sourceChannel === "other" && !sourceOther.trim()) return "选择「其他」时请填写具体途径。";
     if (userType === "other" && !userTypeOther.trim()) return "选择「其他」时请填写具体类型。";
     return null;
@@ -89,7 +95,7 @@ export function OnboardingForm({ rejectedReason }: { rejectedReason?: string | n
         contact_name: contactName.trim(),
         contact_phone: contactPhone.trim(),
         needs: needs.trim() || undefined,
-        proof_id: proofId as number,
+        proof_id: proofId ?? undefined,
       });
       router.push("/onboarding/pending");
       router.refresh();
@@ -170,8 +176,18 @@ export function OnboardingForm({ rejectedReason }: { rejectedReason?: string | n
       </label>
 
       <div className="field">
-        <span>上传证明<span className="req">*</span></span>
-        <p className="muted small">请上传公司证明（如营业执照、工牌、名片、账号截图等，支持 JPG/PNG/WEBP/PDF，≤5MB）。</p>
+        <span>
+          上传证明
+          {proofRequired ? (
+            <span className="req">*</span>
+          ) : (
+            <span className="muted small">（可选）</span>
+          )}
+        </span>
+        <p className="muted small">
+          请上传公司证明（如营业执照、工牌、名片、账号截图等，支持 JPG/PNG/WEBP/PDF，≤5MB）。
+          {proofRequired ? null : "测试期可跳过，上线前需上传。"}
+        </p>
         <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={onFileChange} />
         {uploading ? <span className="muted small">上传中…</span> : null}
         {proofName ? <span className="upload-ok">已上传：{proofName}</span> : null}

@@ -17,7 +17,7 @@ export default async function OnboardingPage() {
   }
 
   const status = await getServerOnboardingStatus();
-  if (status?.status === "approved") redirect("/");
+  if (status?.status === "approved") redirect("/console");
   if (status?.status === "pending") redirect("/onboarding/pending");
   if (status?.status === "rejected") redirect("/onboarding/rejected");
 
@@ -29,7 +29,7 @@ export default async function OnboardingPage() {
           首次使用前请认真填写以下内容，本问卷仅需填写一次；带 <span className="req">*</span> 为必选项，其余可选。
         </p>
       </div>
-      <OnboardingForm />
+      <OnboardingForm proofRequired={Boolean(status?.proof_required)} />
     </div>
   );
 }

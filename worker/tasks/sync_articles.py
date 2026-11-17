@@ -55,5 +55,6 @@ async def sync_articles(
             break
 
     accounts_repo.touch_synced(session, account)
+    accounts_repo.refresh_derived_attributes(session, account)
     session.flush()
     return total_written

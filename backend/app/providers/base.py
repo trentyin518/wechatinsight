@@ -26,6 +26,21 @@ class ProviderAccount:
     description: str | None = None
     verification_subject: str | None = None
     account_type: str | None = None
+    # Optional account-level attributes / estimates. ``None`` means unknown.
+    category: str | None = None
+    region: str | None = None
+    estimated_fans: int | None = None
+    avg_read: int | None = None
+    avg_like: int | None = None
+    avg_wow: int | None = None
+    avg_share: int | None = None
+    avg_comment: int | None = None
+    article_count: int | None = None
+    estimated_price: int | None = None
+    ad_count_30d: int | None = None
+    xigua_index: float | None = None
+    is_original: bool | None = None
+    has_video: bool | None = None
     source_updated_at: datetime | None = None
 
 
@@ -39,6 +54,7 @@ class ProviderArticle:
     cover_url: str | None = None
     summary: str | None = None
     author: str | None = None
+    ip_region: str | None = None
     is_original: bool | None = None
     is_paid: bool | None = None
 

@@ -6,8 +6,10 @@ import type {
   OnboardingStatusResponse,
   OnboardingSubmitInput,
   ProofUploadResponse,
+  SelectionState,
   SubmissionListResponse,
   SubmissionOut,
+  UsageOverview,
   UserOut,
   WechatAuthorizeResponse,
 } from "./types";
@@ -126,4 +128,22 @@ export function rejectSubmission(id: number, reason: string): Promise<Submission
     `/api/v1/onboarding/submissions/${id}/reject`,
     jsonInit("POST", { reason }),
   );
+}
+
+export function getUsageOverview(): Promise<UsageOverview> {
+  return requestJson<UsageOverview>("/api/v1/admin/usage");
+}
+
+export function addSelection(accountId: number): Promise<SelectionState> {
+  return requestJson<SelectionState>(
+    "/api/v1/selection",
+    jsonInit("POST", { account_id: accountId }),
+  );
+}
+
+export function removeSelection(accountId: number): Promise<SelectionState> {
+  return requestJson<SelectionState>(`/api/v1/selection/${accountId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
 }

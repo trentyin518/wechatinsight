@@ -1,10 +1,11 @@
-"""Sample real-data sync: one page of articles + one metric snapshot.
+"""Sample real-data sync: one page of articles + metric snapshots.
 
 Requires a configured real provider (API key) and a database with schema applied.
 With the default mock provider this also serves as a manual end-to-end check.
 
 Usage:
   DATABASE_URL=... DEFAULT_PROVIDER=qovia python -m scripts.sync_sample "科技"
+  python -m scripts.sync_sample "财经" --metrics 5
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ for _p in (str(_BACKEND_DIR), str(_REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from app.db.models import JobType, WechatArticle
+from app.db.models import ArticleMetric, JobType, WechatArticle
 from app.db.session import SessionLocal, init_db
 from app.providers.registry import get_provider
 from app.repositories import accounts as accounts_repo
@@ -28,7 +29,7 @@ from app.repositories import jobs as jobs_repo
 from worker.tasks import sync_articles, sync_metrics
 
 
-async def run(keyword: str, provider_name: str | None) -> None:
+async def run(keyword: str, provider_name: str | None, metrics_limit: int) -> None:
     init_db()
     db = SessionLocal()
     try:
@@ -39,8 +40,9 @@ async def run(keyword: str, provider_name: str | None) -> None:
             return
 
         account = accounts_repo.upsert_from_provider(db, result.items[0])
+        accounts_repo.apply_category_hint(db, account, keyword)
         db.commit()
-        print(f"账号：{account.name} (id={account.id})")
+        print(f"账号：{account.name} (id={account.id}) category={account.category!r}")
 
         job = jobs_repo.create_job(
             db,
@@ -56,33 +58,52 @@ async def run(keyword: str, provider_name: str | None) -> None:
         db.commit()
         print(f"已同步文章：{count} 篇")
 
-        article = (
+        articles = (
             db.query(WechatArticle)
             .filter(WechatArticle.account_id == account.id)
             .order_by(WechatArticle.id)
-            .first()
+            .all()
         )
-        if article is None:
+        if not articles:
             print("没有可采集指标的文章")
             return
 
-        mjob = jobs_repo.create_job(
-            db,
-            job_type=JobType.SYNC_METRICS,
-            target_type="article",
-            target_id=article.id,
-            provider=provider.name,
-        )
-        db.commit()
-        from app.db.models import ArticleMetric
+        synced = 0
+        for article in articles:
+            if synced >= metrics_limit:
+                break
+            has_metric = (
+                db.query(ArticleMetric)
+                .filter(ArticleMetric.article_id == article.id)
+                .count()
+            )
+            if has_metric:
+                continue
+            mjob = jobs_repo.create_job(
+                db,
+                job_type=JobType.SYNC_METRICS,
+                target_type="article",
+                target_id=article.id,
+                provider=provider.name,
+            )
+            db.commit()
+            await sync_metrics.sync_metrics(db, mjob, article, provider)
+            db.commit()
+            synced += 1
+            print(f"  指标已写入 article_id={article.id}")
 
-        await sync_metrics.sync_metrics(db, mjob, article, provider)
+        # Always refresh from whatever metrics exist (including prior runs).
+        accounts_repo.refresh_derived_attributes(db, account)
         db.commit()
-        written = db.query(ArticleMetric).filter(ArticleMetric.article_id == article.id).count()
-        if written:
-            print(f"已为文章 {article.id} 写入指标快照")
-        else:
-            print(f"数据源未返回文章 {article.id} 的互动指标（已标记为缺失，不写入 0）")
+        print(
+            "聚合："
+            f"article_count={account.article_count} "
+            f"avg_read={account.avg_read} avg_like={account.avg_like} "
+            f"avg_wow={account.avg_wow} avg_share={account.avg_share} "
+            f"avg_comment={account.avg_comment}"
+        )
+        if synced == 0:
+            print("本轮未新增指标（目标文章均已有快照，或 metrics_limit=0）")
     finally:
         db.close()
 
@@ -91,8 +112,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("keyword", help="用于搜索样例账号的关键词")
     parser.add_argument("--provider", default=None, help="数据源（默认取 DEFAULT_PROVIDER）")
+    parser.add_argument(
+        "--metrics",
+        type=int,
+        default=5,
+        help="为本账号最多新采多少篇尚无指标的文章（默认 5）",
+    )
     args = parser.parse_args()
-    asyncio.run(run(args.keyword, args.provider))
+    asyncio.run(run(args.keyword, args.provider, args.metrics))
 
 
 if __name__ == "__main__":

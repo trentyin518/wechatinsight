@@ -6,10 +6,13 @@ import type {
   AccountSearchResponse,
   ArticleDetail,
   ArticleListResponse,
+  ArticleSearchResponse,
   MeResponse,
   MetricsHistoryResponse,
   OnboardingStatusResponse,
   OverviewResponse,
+  SelectionListResponse,
+  SimilarAccountsResponse,
   UserOut,
 } from "./types";
 
@@ -76,6 +79,24 @@ export function searchAccounts(
   return getJson<AccountSearchResponse>(`/api/v1/accounts?${params.toString()}`);
 }
 
+/** Search with the full set of console filters (ranges already expanded). */
+export function searchAccountsWithFilters(
+  params: Record<string, string>,
+  pageSize = 20,
+): Promise<AccountSearchResponse> {
+  const query = new URLSearchParams({ page_size: String(pageSize), ...params });
+  return getJson<AccountSearchResponse>(`/api/v1/accounts?${query.toString()}`);
+}
+
+/** Search collected articles (按文章内容搜索). */
+export function searchArticles(
+  params: Record<string, string>,
+  pageSize = 20,
+): Promise<ArticleSearchResponse> {
+  const query = new URLSearchParams({ page_size: String(pageSize), ...params });
+  return getJson<ArticleSearchResponse>(`/api/v1/articles?${query.toString()}`);
+}
+
 export function getAccount(id: string | number): Promise<AccountDetail> {
   return getJson<AccountDetail>(`/api/v1/accounts/${id}`);
 }
@@ -117,6 +138,26 @@ export async function getServerOnboardingStatus(): Promise<OnboardingStatusRespo
 export async function getServerOverview(): Promise<OverviewResponse | null> {
   try {
     return await getJson<OverviewResponse>("/api/v1/overview");
+  } catch {
+    return null;
+  }
+}
+
+export async function getServerSelection(): Promise<SelectionListResponse | null> {
+  try {
+    return await getJson<SelectionListResponse>("/api/v1/selection");
+  } catch {
+    return null;
+  }
+}
+
+export async function getServerSimilarAccounts(
+  accountId: number,
+): Promise<SimilarAccountsResponse | null> {
+  try {
+    return await getJson<SimilarAccountsResponse>(
+      `/api/v1/accounts/${accountId}/similar`,
+    );
   } catch {
     return null;
   }

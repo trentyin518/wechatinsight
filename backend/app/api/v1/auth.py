@@ -145,14 +145,25 @@ def logout(
 def wechat_authorize() -> WechatAuthorizeResponse:
     settings = get_settings()
     configured = wechat_service.wechat_configured(settings)
+    state: str | None = None
     if configured:
         state = state_service.sign_state(settings.session_secret)
         url = wechat_service.build_authorize_url(settings, state)
     else:
         url = ""
-    mock_enabled = (not configured) and (not settings.is_production)
+    # Mock is a local-only fallback: enabled automatically outside production, and
+    # opt-in in production via WECHAT_MOCK_ENABLED for demos.
+    mock_enabled = (not configured) and (
+        (not settings.is_production) or settings.wechat_mock_enabled
+    )
     return WechatAuthorizeResponse(
-        authorize_url=url, configured=configured, mock_enabled=mock_enabled
+        authorize_url=url,
+        configured=configured,
+        mock_enabled=mock_enabled,
+        appid=settings.wechat_app_id if configured else None,
+        redirect_uri=settings.wechat_redirect_uri if configured else None,
+        scope="snsapi_login",
+        state=state,
     )
 
 
@@ -186,7 +197,7 @@ def wechat_mock(
     db: Session = Depends(get_db),
 ) -> MeResponse:
     settings = get_settings()
-    if settings.is_production:
+    if settings.is_production and not settings.wechat_mock_enabled:
         raise Forbidden("mock 登录仅用于开发环境。", code="MOCK_DISABLED")
     identity = (payload.identity or "").strip() or "demo"
     openid = f"mock:{identity}"

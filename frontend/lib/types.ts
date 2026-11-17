@@ -4,8 +4,24 @@ export interface AccountOut {
   wechat_id: string | null;
   description: string | null;
   avatar_url: string | null;
+  verification_subject?: string | null;
+  account_type?: string | null;
   provider: string;
   last_synced_at: string | null;
+  category?: string | null;
+  region?: string | null;
+  estimated_fans?: number | null;
+  avg_read?: number | null;
+  avg_like?: number | null;
+  avg_wow?: number | null;
+  avg_share?: number | null;
+  avg_comment?: number | null;
+  article_count?: number | null;
+  estimated_price?: number | null;
+  ad_count_30d?: number | null;
+  xigua_index?: number | null;
+  is_original?: boolean | null;
+  has_video?: boolean | null;
 }
 
 export interface AccountDetail extends AccountOut {
@@ -22,12 +38,18 @@ export interface AccountSearchResponse {
   total: number;
 }
 
+export interface SimilarAccountsResponse {
+  account: AccountOut;
+  items: AccountOut[];
+}
+
 export interface ArticleListItem {
   id: number;
   title: string;
   article_url: string;
   provider: string;
   published_at: string | null;
+  ip_region: string | null;
   read_count: number | null;
   like_count: number | null;
   wow_count: number | null;
@@ -38,6 +60,36 @@ export interface ArticleListItem {
 
 export interface ArticleListResponse {
   items: ArticleListItem[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export interface ArticleSearchItem {
+  id: number;
+  title: string;
+  article_url: string;
+  provider: string;
+  published_at: string | null;
+  is_original: boolean | null;
+  author: string | null;
+  ip_region: string | null;
+  summary: string | null;
+  account_id: number;
+  account_name: string;
+  account_avatar_url: string | null;
+  account_category: string | null;
+  account_estimated_fans: number | null;
+  read_count: number | null;
+  like_count: number | null;
+  share_count: number | null;
+  wow_count: number | null;
+  comment_count: number | null;
+  metrics_observed_at: string | null;
+}
+
+export interface ArticleSearchResponse {
+  items: ArticleSearchItem[];
   page: number;
   page_size: number;
   total: number;
@@ -73,6 +125,7 @@ export interface ArticleDetail {
   provider: string;
   summary: string | null;
   author: string | null;
+  ip_region: string | null;
   cover_url: string | null;
   published_at: string | null;
   is_original: boolean | null;
@@ -99,6 +152,10 @@ export interface WechatAuthorizeResponse {
   authorize_url: string;
   configured: boolean;
   mock_enabled: boolean;
+  appid?: string | null;
+  redirect_uri?: string | null;
+  scope?: string;
+  state?: string | null;
 }
 
 export interface ProofUploadResponse {
@@ -119,6 +176,7 @@ export interface SubmissionSummary {
 export interface OnboardingStatusResponse {
   status: OnboardingStatus;
   submission: SubmissionSummary | null;
+  proof_required?: boolean;
 }
 
 export interface OnboardingSubmitInput {
@@ -130,7 +188,7 @@ export interface OnboardingSubmitInput {
   contact_name: string;
   contact_phone: string;
   needs?: string;
-  proof_id: number;
+  proof_id?: number;
 }
 
 export interface SubmissionOut {
@@ -165,4 +223,43 @@ export interface OverviewResponse {
   providers_count: number;
   last_updated_at: string | null;
   recent_accounts: AccountOut[];
+}
+
+export interface SelectionItem {
+  account: AccountOut;
+  added_at: string;
+}
+
+export interface SelectionListResponse {
+  items: SelectionItem[];
+  total: number;
+}
+
+export interface SelectionState {
+  account_id: number;
+  selected: boolean;
+  total: number;
+}
+
+export interface UsageLogItem {
+  request_time: string;
+  provider: string;
+  endpoint: string;
+  success: boolean;
+  estimated_cost: number;
+}
+
+export interface UsageOverview {
+  balance_usd: number | null;
+  plan: string | null;
+  daily_cost_usd: number;
+  monthly_cost_usd: number;
+  daily_budget_usd: number;
+  monthly_budget_usd: number;
+  today_calls: number;
+  collection_enabled: boolean;
+  search_retry_enabled: boolean;
+  over_daily_budget: boolean;
+  over_monthly_budget: boolean;
+  recent: UsageLogItem[];
 }

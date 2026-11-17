@@ -34,7 +34,7 @@ class OnboardingSubmitRequest(BaseModel):
     contact_name: str
     contact_phone: str
     needs: str | None = None
-    proof_id: int
+    proof_id: int | None = None
 
     @field_validator("source_channel")
     @classmethod
@@ -87,6 +87,9 @@ class SubmissionSummary(BaseModel):
 class OnboardingStatusResponse(BaseModel):
     status: str
     submission: SubmissionSummary | None = None
+    # False during testing / gray rollout so the form can be submitted without
+    # a proof file; true at launch.
+    proof_required: bool = False
 
 
 class SubmissionOut(BaseModel):

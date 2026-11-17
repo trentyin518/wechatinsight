@@ -8,13 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.core.errors import DataSourceUnavailable, QuotaExceeded
+from app.core.errors import DataSourceBusy, DataSourceUnavailable, QuotaExceeded
 from app.db.models import WechatAccount
 from app.providers.base import WeChatProvider
 from app.providers.registry import get_provider
 from app.repositories import accounts as accounts_repo
 from app.repositories import search_cache as search_cache_repo
+from app.repositories import search_retry_queue as search_retry_repo
 from app.repositories import usage as usage_repo
+from app.repositories.accounts import AccountFilters
 from app.services.ratelimit import rate_limiter
 
 
@@ -25,6 +27,13 @@ class SearchResult:
     degraded: bool = False
 
 
+def _has_filters(filters: AccountFilters | None) -> bool:
+    """True when any constraint is set (an all-None object means "no filters")."""
+    if filters is None:
+        return False
+    return any(getattr(filters, field) is not None for field in filters.__dataclass_fields__)
+
+
 async def search_accounts(
     session: Session,
     keyword: str,
@@ -33,9 +42,17 @@ async def search_accounts(
     *,
     provider: WeChatProvider | None = None,
     settings: Settings | None = None,
+    filters: AccountFilters | None = None,
+    mode: str = "name",
 ) -> SearchResult:
+    if mode == "article":
+        items, total = accounts_repo.search_by_article_local(
+            session, keyword, page, page_size, filters
+        )
+        return SearchResult(items=items, total=total)
+
     settings = settings or get_settings()
-    items, total = accounts_repo.search_local(session, keyword, page, page_size)
+    items, total = accounts_repo.search_local(session, keyword, page, page_size, filters)
     if total > 0 or not (keyword or "").strip():
         return SearchResult(items=items, total=total)
 
@@ -45,15 +62,17 @@ async def search_accounts(
     provider_name = getattr(provider, "name", None) or settings.default_provider
 
     # A keyword we already paid for — including one that returned nothing — is
-    # answered from the cache. No rate-limit slot, no provider call, no cost.
-    cached = search_cache_repo.get(session, provider_name, keyword)
-    if cached is not None and search_cache_repo.is_fresh(
-        cached,
-        ttl_hours=settings.search_cache_ttl_hours,
-        empty_ttl_hours=settings.empty_search_cache_ttl_hours,
-    ):
-        cached_items, cached_total = _items_from_ids(session, cached.account_ids, page, page_size)
-        return SearchResult(items=cached_items, total=cached_total)
+    # answered from the cache. Skipped when filters are present so the cached
+    # ordering cannot bypass the selected constraints.
+    if not _has_filters(filters):
+        cached = search_cache_repo.get(session, provider_name, keyword)
+        if cached is not None and search_cache_repo.is_fresh(
+            cached,
+            ttl_hours=settings.search_cache_ttl_hours,
+            empty_ttl_hours=settings.empty_search_cache_ttl_hours,
+        ):
+            cached_items, cached_total = _items_from_ids(session, cached.account_ids, page, page_size)
+            return SearchResult(items=cached_items, total=cached_total)
 
     # Controlled realtime lookup: rate limit + budget, then a single provider call.
     rate_limiter.check("search", settings.search_rate_limit_per_minute)
@@ -67,7 +86,29 @@ async def search_accounts(
     try:
         provider = provider or get_provider()
         result = await provider.search_accounts(keyword, page=1, page_size=25)
-    except DataSourceUnavailable:
+    except (DataSourceBusy, DataSourceUnavailable) as exc:
+        # Upstream is sick. Serve any earlier (even expired) cached hits as a
+        # graceful degradation so the user still sees known results.
+        if not _has_filters(filters):
+            stale = search_cache_repo.get(session, provider_name, keyword)
+            if stale is not None and stale.total > 0:
+                cached_items, cached_total = _items_from_ids(
+                    session, stale.account_ids, page, page_size
+                )
+                return SearchResult(items=cached_items, total=cached_total, degraded=True)
+            # On "busy", queue a durable background retry so the next search can
+            # be answered from the local store once the upstream recovers.
+            if isinstance(exc, DataSourceBusy):
+                try:
+                    search_retry_repo.enqueue(
+                        session,
+                        provider_name,
+                        keyword,
+                        max_attempts=settings.search_retry_max_attempts,
+                    )
+                    session.commit()
+                except Exception:  # queueing must never mask the real error
+                    session.rollback()
         if total > 0:
             return SearchResult(items=items, total=total, degraded=True)
         raise
@@ -87,7 +128,7 @@ async def search_accounts(
         returned_items=len(result.items),
     )
 
-    items, total = accounts_repo.search_local(session, keyword, page, page_size)
+    items, total = accounts_repo.search_local(session, keyword, page, page_size, filters)
     return SearchResult(items=items, total=total)
 
 

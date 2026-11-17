@@ -91,6 +91,36 @@ def test_submit_with_unknown_proof(client):
     assert resp.status_code == 404
 
 
+def test_submit_without_proof_when_not_required(client):
+    _register(client)
+    payload = _payload(0)
+    payload.pop("proof_id")
+    submit = client.post("/api/v1/onboarding/submit", json=payload)
+    assert submit.status_code == 200, submit.text
+    assert submit.json()["status"] == OnboardingStatus.PENDING
+    assert submit.json()["proof_required"] is False
+
+
+def test_submit_requires_proof_when_enabled(client, monkeypatch):
+    import dataclasses
+
+    import app.api.v1.onboarding as onboarding_mod
+    from app.core.config import get_settings
+
+    real = get_settings()
+    monkeypatch.setattr(
+        onboarding_mod,
+        "get_settings",
+        lambda: dataclasses.replace(real, onboarding_proof_required=True),
+    )
+    _register(client)
+    payload = _payload(0)
+    payload.pop("proof_id")
+    resp = client.post("/api/v1/onboarding/submit", json=payload)
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
 def test_duplicate_pending_rejected(client):
     _register(client)
     proof_id = _upload(client).json()["proof_id"]

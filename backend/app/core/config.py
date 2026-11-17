@@ -57,6 +57,22 @@ class Settings:
     # hitting a billed provider again. Empty results are kept longer on purpose.
     search_cache_ttl_hours: int = 24
     empty_search_cache_ttl_hours: int = 168
+    # Background retry of cold-start searches that hit an upstream "busy".
+    search_retry_max_attempts: int = 8
+    search_retry_base_seconds: int = 60
+    # How often the API process drains the search-retry queue (0 disables it).
+    search_retry_interval_seconds: int = 30
+    # Master switch for any *background* search-retry work (API loop + worker).
+    # Off by default so nothing repeatedly calls the paid upstream on its own.
+    search_retry_enabled: bool = False
+    # Proactive collection (account/article/metrics sweep) is OFF by default.
+    # The site is demand-driven: the provider is only called when a user's
+    # search misses the local cache. Turn on only when you intentionally want
+    # a background refresh window.
+    collection_enabled: bool = False
+    # Even when collection is on, don't re-fetch an article's metrics within
+    # this window (kills the "every 4s per article" cost storm).
+    metrics_min_interval_hours: int = 24
 
     # Authentication & onboarding. AUTH_ENFORCED gates whether data endpoints
     # require an approved session; it defaults to False so the endpoints and UI
@@ -72,9 +88,16 @@ class Settings:
     wechat_app_secret: str = ""
     wechat_redirect_uri: str = "http://localhost:8000/api/v1/auth/wechat/callback"
     wechat_state_ttl_seconds: int = 600
+    # Allow the mock QR login even when APP_ENV=production (local demos only).
+    # Defaults to off so a real deployment never silently falls back to mock.
+    wechat_mock_enabled: bool = False
     # Onboarding proof uploads.
     proof_max_mb: int = 5
     upload_dir: str = ""
+    # Whether proof is required when submitting onboarding. Off during local /
+    # gray-rollout testing so users can validate the site flow; flip to true
+    # before production launch.
+    onboarding_proof_required: bool = False
     # Idempotently bootstrapped admin (used to review onboarding submissions).
     admin_phone: str = ""
     admin_password: str = ""
@@ -103,6 +126,12 @@ def get_settings() -> Settings:
         xmedi_base_url=os.getenv("XMEDI_BASE_URL", "https://api.xmedi.example.com"),
         search_cache_ttl_hours=_int(os.getenv("SEARCH_CACHE_TTL_HOURS"), 24),
         empty_search_cache_ttl_hours=_int(os.getenv("EMPTY_SEARCH_CACHE_TTL_HOURS"), 168),
+        search_retry_max_attempts=_int(os.getenv("SEARCH_RETRY_MAX_ATTEMPTS"), 8),
+        search_retry_base_seconds=_int(os.getenv("SEARCH_RETRY_BASE_SECONDS"), 60),
+        search_retry_interval_seconds=_int(os.getenv("SEARCH_RETRY_INTERVAL_SECONDS"), 30),
+        search_retry_enabled=_bool(os.getenv("SEARCH_RETRY_ENABLED"), False),
+        collection_enabled=_bool(os.getenv("COLLECTION_ENABLED"), False),
+        metrics_min_interval_hours=_int(os.getenv("METRICS_MIN_INTERVAL_HOURS"), 24),
         auth_enforced=_bool(os.getenv("AUTH_ENFORCED"), False),
         session_ttl_hours=_int(os.getenv("SESSION_TTL_HOURS"), 168),
         session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "wi_session"),
@@ -114,8 +143,10 @@ def get_settings() -> Settings:
             "WECHAT_REDIRECT_URI", "http://localhost:8000/api/v1/auth/wechat/callback"
         ),
         wechat_state_ttl_seconds=_int(os.getenv("WECHAT_STATE_TTL_SECONDS"), 600),
+        wechat_mock_enabled=_bool(os.getenv("WECHAT_MOCK_ENABLED"), False),
         proof_max_mb=_int(os.getenv("PROOF_MAX_MB"), 5),
         upload_dir=os.getenv("UPLOAD_DIR") or str(BACKEND_DIR / "uploads"),
+        onboarding_proof_required=_bool(os.getenv("ONBOARDING_PROOF_REQUIRED"), False),
         admin_phone=os.getenv("ADMIN_PHONE", ""),
         admin_password=os.getenv("ADMIN_PASSWORD", ""),
     )

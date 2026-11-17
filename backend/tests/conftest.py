@@ -22,6 +22,23 @@ os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{_DB_FILE}"
 os.environ.setdefault("DEFAULT_PROVIDER", "mock")
 os.environ.setdefault("ALLOW_COLD_START_SEARCH", "true")
 os.environ.setdefault("UPLOAD_DIR", str(Path(tempfile.gettempdir()) / "wechat_insight_uploads"))
+# The developer's local .env may enable the gray-rollout flags (AUTH_ENFORCED,
+# WECHAT_MOCK_ENABLED, admin bootstrap). Tests must be deterministic and start
+# from the public/no-auth baseline, so force these off regardless of ambient env.
+# (`.env` is loaded later with override=False, so these values win.)
+os.environ["AUTH_ENFORCED"] = "false"
+os.environ["WECHAT_MOCK_ENABLED"] = "false"
+os.environ["WECHAT_APP_ID"] = ""
+os.environ["WECHAT_APP_SECRET"] = ""
+os.environ["ADMIN_PHONE"] = ""
+os.environ["ADMIN_PASSWORD"] = ""
+os.environ["ONBOARDING_PROOF_REQUIRED"] = "false"
+# Disable the in-process search-retry loop during tests (run it explicitly).
+os.environ["SEARCH_RETRY_INTERVAL_SECONDS"] = "0"
+os.environ["SEARCH_RETRY_ENABLED"] = "false"
+# Collection is OFF by default in production-ish runtime; enable it here so the
+# worker tests can exercise the (demand-gated) collection mechanics directly.
+os.environ["COLLECTION_ENABLED"] = "true"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

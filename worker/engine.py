@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError, ProviderError
-from app.db.models import JobType, Priority, SyncJob
+from app.db.models import JobType, SyncJob
 from app.providers.base import WeChatProvider
 from app.providers.registry import get_provider
 from app.repositories import accounts as accounts_repo
@@ -82,26 +82,39 @@ async def run_pending(
     provider: WeChatProvider | None = None,
     settings: Settings | None = None,
 ) -> int:
-    """Process pending/retry jobs. Under budget pressure, C-tier jobs are skipped."""
+    """Process pending/retry jobs. Halted entirely once the budget is exceeded.
+
+    Previously only C-tier jobs were skipped under budget pressure, so A/B jobs
+    (most collection runs at B) kept spending past the daily cap. Now every paid
+    call stops when the budget is blown — the budget check is re-evaluated before
+    each job so a single batch cannot overshoot by 50 calls.
+    """
     settings = settings or get_settings()
-    blocked = usage_repo.budget_exceeded(
-        session,
-        daily_budget=settings.daily_budget_usd,
-        monthly_budget=settings.monthly_budget_usd,
-    )
-    exclude = {Priority.C} if blocked else None
+
+    def _blocked() -> bool:
+        return usage_repo.budget_exceeded(
+            session,
+            daily_budget=settings.daily_budget_usd,
+            monthly_budget=settings.monthly_budget_usd,
+        )
+
+    if _blocked():
+        return 0
+
     processed = 0
     # Fresh work first.
     while processed < max_jobs:
-        job = jobs_repo.next_pending(session, exclude_priorities=exclude)
+        if _blocked():
+            break
+        job = jobs_repo.next_pending(session)
         if job is None:
             break
         await run_job(session, job, provider)
         processed += 1
     # Retries only once their backoff has elapsed; never straight after failing.
-    for job in jobs_repo.due_retries(
-        session, exclude_priorities=exclude, limit=max_jobs - processed
-    ):
+    for job in jobs_repo.due_retries(session, limit=max_jobs - processed):
+        if _blocked():
+            break
         await run_job(session, job, provider)
         processed += 1
     return processed

@@ -12,7 +12,7 @@ from app.db.models import (
     SyncJob,
     WechatArticle,
 )
-from app.providers.base import ProviderAccount, ProviderArticle
+from app.providers.base import ProviderAccount, ProviderArticle, ProviderMetrics
 from app.providers.mock import MockProvider
 from app.repositories import accounts as accounts_repo
 from app.repositories import articles as articles_repo
@@ -138,3 +138,42 @@ def test_metrics_jobs_enqueued_for_qovia(session):
 
     metrics_jobs = session.query(SyncJob).filter(SyncJob.job_type == JobType.SYNC_METRICS).count()
     assert metrics_jobs == 1
+
+
+def test_collection_disabled_enqueues_nothing(session):
+    import dataclasses
+
+    from app.core.config import get_settings
+
+    _seed(session)
+    settings = dataclasses.replace(get_settings(), collection_enabled=False)
+    assert scheduler.enqueue_due_work(session, settings) == 0
+    session.commit()
+    assert session.query(SyncJob).count() == 0
+
+
+def test_metrics_cooldown_skips_recently_synced(session):
+    account = accounts_repo.upsert_from_provider(
+        session,
+        ProviderAccount(provider="qovia", provider_account_id="gh_q2", name="账号Q2"),
+    )
+    session.commit()
+    article = articles_repo.upsert_from_provider(
+        session,
+        account.id,
+        ProviderArticle(
+            provider="qovia", title="t", url="https://mp.weixin.qq.com/s?__biz=gh_q2&mid=1"
+        ),
+    )
+    session.commit()
+    # A fresh snapshot within the cooldown window must NOT trigger a paid re-fetch.
+    articles_repo.add_metric_snapshot(
+        session, article.id, ProviderMetrics(provider="qovia", read_count=10)
+    )
+    session.commit()
+
+    scheduler.enqueue_due_work(session)
+    session.commit()
+
+    metrics_jobs = session.query(SyncJob).filter(SyncJob.job_type == JobType.SYNC_METRICS).count()
+    assert metrics_jobs == 0

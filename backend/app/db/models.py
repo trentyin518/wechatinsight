@@ -176,6 +176,24 @@ class WechatAccount(Base):
     primary_provider: Mapped[str] = mapped_column(String(64), nullable=False)
     priority: Mapped[str] = mapped_column(String(1), nullable=False, default=Priority.B)
 
+    # Optional account-level attributes / estimates supplied by a data source.
+    # All nullable: unknown values stay NULL (never coerced to 0) so filtering
+    # and display remain honest. Populated from the provider when available.
+    category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    region: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estimated_fans: Mapped[int | None] = mapped_column(nullable=True)
+    avg_read: Mapped[int | None] = mapped_column(nullable=True)
+    avg_like: Mapped[int | None] = mapped_column(nullable=True)
+    avg_wow: Mapped[int | None] = mapped_column(nullable=True)
+    avg_share: Mapped[int | None] = mapped_column(nullable=True)
+    avg_comment: Mapped[int | None] = mapped_column(nullable=True)
+    article_count: Mapped[int | None] = mapped_column(nullable=True)
+    estimated_price: Mapped[int | None] = mapped_column(nullable=True)
+    ad_count_30d: Mapped[int | None] = mapped_column(nullable=True)
+    xigua_index: Mapped[float | None] = mapped_column(nullable=True)
+    is_original: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    has_video: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(timestamptz(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         timestamptz(), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -219,6 +237,7 @@ class WechatArticle(Base):
 
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     author: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip_region: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     published_at: Mapped[datetime | None] = mapped_column(timestamptz(), nullable=True)
@@ -351,4 +370,70 @@ class SearchCache(Base):
     __table_args__ = (
         UniqueConstraint("provider", "keyword", name="uq_search_cache_provider_keyword"),
         Index("idx_search_cache_fetched_at", "fetched_at"),
+    )
+
+
+class SearchRetryStatus:
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    EXHAUSTED = "exhausted"
+
+    ALL = {PENDING, RUNNING, SUCCEEDED, EXHAUSTED}
+
+
+class SearchRetryQueue(Base):
+    """Durable queue for retrying cold-start searches that hit an upstream busy.
+
+    When a live search fails because the provider is busy, the keyword is queued
+    here so a background worker keeps retrying with backoff. On success the
+    results are ingested and cached, so the user's next search is answered from
+    the local store instead of a live (and possibly still busy) call.
+    """
+
+    __tablename__ = "search_retry_queue"
+
+    id: Mapped[int] = mapped_column(bigint_pk(), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    keyword: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=SearchRetryStatus.PENDING
+    )
+    attempts: Mapped[int] = mapped_column(nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(nullable=False, default=8)
+    next_retry_at: Mapped[datetime] = mapped_column(
+        timestamptz(), server_default=func.now(), nullable=False
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        timestamptz(), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamptz(), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("provider", "keyword", name="uq_search_retry_provider_keyword"),
+        Index("idx_search_retry_status_next", "status", "next_retry_at"),
+    )
+
+
+class SelectionItem(Base):
+    """A公众号 a user has added to their selection list (选号清单)."""
+
+    __tablename__ = "selection_items"
+
+    id: Mapped[int] = mapped_column(bigint_pk(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("wechat_accounts.id"), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        timestamptz(), server_default=func.now(), nullable=False
+    )
+
+    account: Mapped[WechatAccount] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_id", name="uq_selection_user_account"),
+        Index("idx_selection_user", "user_id"),
     )

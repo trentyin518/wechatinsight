@@ -41,10 +41,12 @@ export function HeaderAuth() {
 
   return (
     <nav className="nav nav-inline">
-      <Link href={loaded && !user ? "/login" : "/search"}>搜索</Link>
+      <Link href={loaded && !user ? "/login" : "/console"}>搜索</Link>
       {!loaded ? null : user ? (
         <>
+          <Link href="/console">控制台</Link>
           {user.is_admin ? <Link href="/admin/reviews">审核</Link> : null}
+          {user.is_admin ? <Link href="/admin/usage">用量</Link> : null}
           <span className="nav-user">{user.display_name || user.phone || "我的账户"}</span>
           <button type="button" className="link-button" onClick={onLogout}>
             退出

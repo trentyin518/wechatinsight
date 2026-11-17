@@ -39,6 +39,14 @@ class DataSourceUnavailable(AppError):
     default_message = "当前暂时无法更新数据，请稍后重试。"
 
 
+class DataSourceBusy(AppError):
+    """The upstream data source is temporarily overloaded (often retryable)."""
+
+    status_code = 503
+    code = "DATA_SOURCE_BUSY"
+    default_message = "数据源繁忙，请稍后重试。"
+
+
 class DataSourceBillingError(AppError):
     status_code = 402
     code = "DATA_SOURCE_BILLING"

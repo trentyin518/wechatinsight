@@ -2,8 +2,15 @@ import Link from "next/link";
 
 import { DataProvenance } from "@/components/DataProvenance";
 import { Pagination } from "@/components/Pagination";
+import { SelectionButton } from "@/components/console/SelectionButton";
 import { StateMessage } from "@/components/StateMessage";
-import { ApiError, getAccount, getAccountArticles } from "@/lib/api";
+import {
+  ApiError,
+  getAccount,
+  getAccountArticles,
+  getServerSelection,
+  getServerSimilarAccounts,
+} from "@/lib/api";
 import { formatMetric } from "@/lib/format";
 import { requireApprovedOrRedirect } from "@/lib/guard";
 
@@ -12,23 +19,56 @@ interface AccountPageProps {
   searchParams: Promise<{ page?: string }>;
 }
 
+function formatWan(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (value >= 10000) {
+    const wan = value / 10000;
+    return `${Number.isInteger(wan) ? wan.toFixed(1) : wan.toFixed(2)}万`;
+  }
+  return value.toLocaleString("zh-CN");
+}
+
 export default async function AccountPage({ params, searchParams }: AccountPageProps) {
   await requireApprovedOrRedirect();
   const { id } = await params;
   const sp = await searchParams;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+  const accountIdNum = Number.parseInt(id, 10);
 
   try {
-    const [account, articles] = await Promise.all([
+    const [account, articles, similar, selection] = await Promise.all([
       getAccount(id),
       getAccountArticles(id, page),
+      Number.isFinite(accountIdNum) ? getServerSimilarAccounts(accountIdNum) : Promise.resolve(null),
+      getServerSelection(),
     ]);
+
+    const selectedIds = new Set((selection?.items ?? []).map((item) => item.account.id));
+    const similarItems = similar?.items ?? [];
+
+    const typeLabel =
+      account.account_type === "subscription"
+        ? "订阅号"
+        : account.account_type === "service"
+          ? "服务号"
+          : account.account_type;
+
+    const stats: { label: string; value: string }[] = [
+      { label: "西瓜指数", value: account.xigua_index != null ? account.xigua_index.toFixed(1) : "—" },
+      { label: "预估活跃粉丝", value: formatWan(account.estimated_fans) },
+      { label: "发文篇数", value: formatMetric(account.article_count) },
+      { label: "头条平均阅读", value: formatWan(account.avg_read) },
+      { label: "头条平均点赞", value: formatMetric(account.avg_like) },
+      { label: "头条平均转发", value: formatMetric(account.avg_share) },
+      { label: "头条平均在看", value: formatMetric(account.avg_wow) },
+      { label: "头条平均留言", value: formatMetric(account.avg_comment) },
+    ];
 
     return (
       <>
         <div className="breadcrumb">
-          <Link href="/">首页</Link> / <Link href={`/search?q=${encodeURIComponent(account.name)}`}>搜索</Link> /{" "}
-          {account.name}
+          <Link href="/console">控制台</Link> /{" "}
+          <Link href={`/console?q=${encodeURIComponent(account.name)}`}>搜索</Link> / {account.name}
         </div>
 
         <section className="profile-head">
@@ -42,10 +82,62 @@ export default async function AccountPage({ params, searchParams }: AccountPageP
             <div className="meta-row">
               <DataProvenance provider={account.provider} observedAt={account.last_synced_at} label="最近同步" />
               {account.verification_subject ? <span>认证主体：{account.verification_subject}</span> : null}
-              {account.account_type ? <span>账号类型：{account.account_type}</span> : null}
+              {typeLabel ? <span>账号类型：{typeLabel}</span> : null}
+              {account.category ? <span>所属行业：{account.category}</span> : null}
+              {account.region ? <span>运营地区：{account.region}</span> : null}
+              {account.is_original ? <span className="tag tag-green">原创号</span> : null}
+              {account.has_video ? <span className="tag tag-blue">视频号</span> : null}
+            </div>
+            <div className="profile-actions">
+              <SelectionButton accountId={account.id} initialSelected={selectedIds.has(account.id)} />
+              <Link className="btn" href={`/console/similar?account=${account.id}`}>
+                查看相似号
+              </Link>
+              <Link className="btn" href={`/console?q=${encodeURIComponent(account.name)}`}>
+                返回搜索
+              </Link>
             </div>
           </div>
         </section>
+
+        <section className="section">
+          <div className="acct-stats acct-stats-wide">
+            {stats.map((item) => (
+              <div className="acct-stat" key={item.label}>
+                <b>{item.value}</b>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+          {account.estimated_price != null ? (
+            <p className="muted small" style={{ marginTop: 12 }}>
+              预估广告报价：<b>¥{formatWan(account.estimated_price)} 起</b>
+            </p>
+          ) : null}
+        </section>
+
+        {similarItems.length > 0 ? (
+          <section className="section">
+            <div className="section-head">
+              <h2 className="section-title">相似公众号（同行业 · 相近量级）</h2>
+              <Link className="section-more" href={`/console/similar?account=${account.id}`}>
+                查看更多
+              </Link>
+            </div>
+            <div className="list">
+              {similarItems.slice(0, 4).map((item) => (
+                <Link className="list-item" key={item.id} href={`/accounts/${item.id}`}>
+                  <h3>{item.name}</h3>
+                  <div className="list-meta">
+                    <span>{item.category || "—"}</span>
+                    <span>预估活跃粉丝 {formatWan(item.estimated_fans)}</span>
+                    <span>头条平均阅读 {formatWan(item.avg_read)}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="section">
           <h2 className="section-title">历史文章（平台已收录 {articles.total} 篇）</h2>

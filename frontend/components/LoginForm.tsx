@@ -12,6 +12,26 @@ import {
 } from "@/lib/clientApi";
 import type { WechatAuthorizeResponse } from "@/lib/types";
 
+import { WechatQrLogin } from "./WechatQrLogin";
+
+const MOCK_IDENTITY_KEY = "wi_mock_identity";
+
+// The mock WeChat login maps an identity to a user (openid = "mock:<identity>").
+// Persist a per-browser identity so repeated "模拟微信登录" returns to the SAME
+// account (so a once-approved tester stays logged in as that approved user)
+// instead of creating a brand-new, un-onboarded user on every login.
+function getMockIdentity(): string {
+  try {
+    const existing = window.localStorage.getItem(MOCK_IDENTITY_KEY);
+    if (existing) return existing;
+    const id = `demo-${Math.random().toString(36).slice(2, 10)}`;
+    window.localStorage.setItem(MOCK_IDENTITY_KEY, id);
+    return id;
+  } catch {
+    return "demo";
+  }
+}
+
 export function LoginForm() {
   const router = useRouter();
   const [tab, setTab] = useState<"password" | "wechat">("password");
@@ -53,7 +73,7 @@ export function LoginForm() {
     setError(null);
     setLoading(true);
     try {
-      await wechatMockLogin(`demo-${Date.now()}`);
+      await wechatMockLogin(getMockIdentity());
       go();
     } catch (err) {
       setError(toApiError(err).message);
@@ -120,17 +140,29 @@ export function LoginForm() {
         <div className="form-stack">
           {!wechat ? (
             <p className="muted small">正在加载微信登录…</p>
-          ) : wechat.configured ? (
+          ) : wechat.configured &&
+            wechat.appid &&
+            wechat.redirect_uri &&
+            wechat.state ? (
             <>
-              <p className="muted small">使用微信扫描二维码登录。</p>
-              <a className="btn btn-primary" href={wechat.authorize_url}>
-                打开微信扫码登录
+              <WechatQrLogin
+                appid={wechat.appid}
+                redirectUri={wechat.redirect_uri}
+                state={wechat.state}
+                scope={wechat.scope}
+                onError={(message) => setError(message)}
+              />
+              <p className="muted small wechat-hint">
+                请使用微信「扫一扫」扫描上方二维码登录。
+              </p>
+              <a className="muted small" href={wechat.authorize_url} target="_blank" rel="noreferrer">
+                二维码未显示？在新窗口打开
               </a>
             </>
           ) : wechat.mock_enabled ? (
             <>
               <p className="muted small">
-                当前未配置微信开放平台凭据，开发环境可模拟扫码登录。生产环境将自动切换为真实扫码。
+                当前未配置微信开放平台凭据，开发环境可模拟扫码登录；同一浏览器多次模拟登录会复用同一体验账号。生产环境将自动切换为真实扫码。
               </p>
               <button className="btn btn-primary" type="button" onClick={onMockLogin} disabled={loading}>
                 {loading ? "登录中…" : "模拟微信登录"}

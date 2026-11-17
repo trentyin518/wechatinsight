@@ -84,6 +84,52 @@ def test_wechat_authorize_reports_mock(client):
     assert body["configured"] is False
     assert body["mock_enabled"] is True
     assert body["authorize_url"] == ""
+    # No QR params are exposed without real credentials.
+    assert body["appid"] is None
+    assert body["state"] is None
+    assert body["scope"] == "snsapi_login"
+
+
+def test_wechat_authorize_configured_exposes_qr_params(client, monkeypatch):
+    import app.api.v1.auth as auth_mod
+
+    configured = dataclasses.replace(
+        get_settings(),
+        wechat_app_id="wx_test_appid",
+        wechat_app_secret="secret",
+        wechat_redirect_uri="https://www.example.com/api/v1/auth/wechat/callback",
+    )
+    monkeypatch.setattr(auth_mod, "get_settings", lambda: configured)
+
+    body = client.get("/api/v1/auth/wechat/authorize").json()
+    assert body["configured"] is True
+    assert body["mock_enabled"] is False
+    assert body["appid"] == "wx_test_appid"
+    assert body["redirect_uri"].endswith("/api/v1/auth/wechat/callback")
+    assert body["scope"] == "snsapi_login"
+    assert body["state"]
+    assert body["authorize_url"].startswith("https://open.weixin.qq.com/connect/qrconnect")
+
+
+def test_wechat_mock_disabled_in_production(client, monkeypatch):
+    import app.api.v1.auth as auth_mod
+
+    prod = dataclasses.replace(get_settings(), app_env="production", wechat_mock_enabled=False)
+    monkeypatch.setattr(auth_mod, "get_settings", lambda: prod)
+    body = client.get("/api/v1/auth/wechat/authorize").json()
+    assert body["configured"] is False
+    assert body["mock_enabled"] is False
+    # The mock login endpoint is blocked too.
+    blocked = client.post("/api/v1/auth/wechat/mock", json={"identity": "prod"})
+    assert blocked.status_code == 403
+    assert blocked.json()["error"]["code"] == "MOCK_DISABLED"
+
+    # Explicit opt-in re-enables mock for demos even in production.
+    prod_on = dataclasses.replace(prod, wechat_mock_enabled=True)
+    monkeypatch.setattr(auth_mod, "get_settings", lambda: prod_on)
+    assert client.get("/api/v1/auth/wechat/authorize").json()["mock_enabled"] is True
+    allowed = client.post("/api/v1/auth/wechat/mock", json={"identity": "prod-demo"})
+    assert allowed.status_code == 200
 
 
 def test_wechat_mock_login(client):

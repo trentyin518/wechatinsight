@@ -43,9 +43,11 @@ async function Results({ q, page }: { q: string; page: number }) {
   } catch (error) {
     const apiError = error as ApiError;
     const message =
-      apiError.code === "DATA_SOURCE_UNAVAILABLE"
-        ? "当前暂时无法从数据源更新数据，请稍后重试。已收录的数据仍可访问。"
-        : apiError.message;
+      apiError.code === "DATA_SOURCE_BUSY"
+        ? "数据源繁忙，请稍后重试。已收录的数据仍可访问。"
+        : apiError.code === "DATA_SOURCE_UNAVAILABLE"
+          ? "当前暂时无法从数据源更新数据，请稍后重试。已收录的数据仍可访问。"
+          : apiError.message;
     return <StateMessage tone="error" title="搜索失败" description={message} />;
   }
 

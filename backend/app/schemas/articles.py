@@ -13,6 +13,7 @@ class ArticleListItem(ORMModel):
     article_url: str
     provider: str
     published_at: datetime | None = None
+    ip_region: str | None = None
     read_count: int | None = None
     like_count: int | None = None
     wow_count: int | None = None
@@ -23,6 +24,36 @@ class ArticleListItem(ORMModel):
 
 class ArticleListResponse(ORMModel):
     items: list[ArticleListItem]
+    page: int
+    page_size: int
+    total: int
+
+
+class ArticleSearchItem(ORMModel):
+    id: int
+    title: str
+    article_url: str
+    provider: str
+    published_at: datetime | None = None
+    is_original: bool | None = None
+    author: str | None = None
+    ip_region: str | None = None
+    summary: str | None = None
+    account_id: int
+    account_name: str
+    account_avatar_url: str | None = None
+    account_category: str | None = None
+    account_estimated_fans: int | None = None
+    read_count: int | None = None
+    like_count: int | None = None
+    share_count: int | None = None
+    wow_count: int | None = None
+    comment_count: int | None = None
+    metrics_observed_at: datetime | None = None
+
+
+class ArticleSearchResponse(ORMModel):
+    items: list[ArticleSearchItem]
     page: int
     page_size: int
     total: int
@@ -58,6 +89,7 @@ class ArticleDetail(ORMModel):
     provider: str
     summary: str | None = None
     author: str | None = None
+    ip_region: str | None = None
     cover_url: str | None = None
     published_at: datetime | None = None
     is_original: bool | None = None

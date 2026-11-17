@@ -77,6 +77,35 @@ def test_budget_exceeded_skips_c_priority(session):
     assert job.status == JobStatus.PENDING
 
 
+def test_budget_exceeded_halts_high_priority(session):
+    # Regression: previously only C-tier was skipped, so A/B jobs kept spending.
+    account = accounts_repo.upsert_from_provider(
+        session,
+        ProviderAccount(
+            provider="mock", provider_account_id="mock-1002", name="示例A", wechat_id="mock_a"
+        ),
+    )
+    session.commit()
+    job = jobs_repo.create_job(
+        session,
+        job_type=JobType.SYNC_ACCOUNT,
+        target_type="account",
+        target_id=account.id,
+        provider="mock",
+        priority=Priority.A,
+    )
+    session.commit()
+    usage_repo.log_usage(session, provider="mock", endpoint="x", success=True, estimated_cost=999)
+    session.commit()
+
+    processed = asyncio.run(
+        engine.run_pending(session, max_jobs=10, settings=_settings_with_budget(5.0))
+    )
+    session.refresh(job)
+    assert processed == 0
+    assert job.status == JobStatus.PENDING
+
+
 def _settings_with_budget(daily: float):
     from app.core.config import get_settings
 

@@ -33,6 +33,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
             </a>
             <span>发布：{formatDateTime(article.published_at)}</span>
             {article.author ? <span>作者：{article.author}</span> : null}
+            {article.ip_region ? <span>IP属地：{article.ip_region}</span> : null}
             {article.is_original !== null ? (
               <span>{article.is_original ? "原创" : "非原创"}</span>
             ) : null}

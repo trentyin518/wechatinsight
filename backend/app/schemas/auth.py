@@ -58,6 +58,12 @@ class WechatAuthorizeResponse(BaseModel):
     authorize_url: str
     configured: bool
     mock_enabled: bool
+    # Parameters for embedding the official WeChat QR (WxLogin JS SDK) inline.
+    # Present only when real credentials are configured.
+    appid: str | None = None
+    redirect_uri: str | None = None
+    scope: str = "snsapi_login"
+    state: str | None = None
 
 
 class WechatMockRequest(BaseModel):

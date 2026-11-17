@@ -23,7 +23,9 @@ from app.db.models import (
 )
 from app.db.session import SessionLocal
 from app.providers.registry import get_provider
+from app.repositories import articles as articles_repo
 from app.repositories import jobs as jobs_repo
+from app.services import search_retry
 from worker import engine
 
 logger = logging.getLogger("wechat_insight.scheduler")
@@ -113,6 +115,10 @@ def enqueue_due_work(
     session: Session, settings: Settings | None = None, *, article_limit: int = 50
 ) -> int:
     settings = settings or get_settings()
+    if not settings.collection_enabled:
+        # Demand-driven only: never proactively sweep every account/article.
+        # The site calls the provider solely when a user's search misses cache.
+        return 0
     now = datetime.now(timezone.utc)
     enqueued = 0
 
@@ -130,9 +136,18 @@ def enqueue_due_work(
     account_priority = {
         a.id: a.priority for a in session.scalars(select(WechatAccount)).all()
     }
+    latest_metric = articles_repo.latest_metric_map(session, [a.id for a in recent_articles])
+    min_interval = timedelta(hours=settings.metrics_min_interval_hours)
     for article in recent_articles:
         if not getattr(get_provider(article.provider), "supports_metrics", True):
             continue  # provider has no metrics endpoint; don't spend/guesstimate
+        existing = latest_metric.get(article.id)
+        if existing is not None:
+            observed = existing.observed_at
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+            if now - observed < min_interval:
+                continue  # still cooling down; don't pay to re-fetch the same article
         priority = account_priority.get(article.account_id, Priority.B)
         if enqueue_metrics_sync(session, article, priority=priority):
             enqueued += 1
@@ -145,8 +160,19 @@ async def run_cycle(max_jobs: int = 50) -> dict[str, int]:
         settings = get_settings()
         enqueued = enqueue_due_work(session, settings)
         session.commit()
-        processed = await engine.run_pending(session, max_jobs=max_jobs, settings=settings)
-        return {"enqueued": enqueued, "processed": processed}
+        if settings.search_retry_enabled:
+            retry_stats = await search_retry.run_search_retries(
+                session, get_provider(), settings
+            )
+        else:
+            retry_stats = {"retried": 0, "retry_succeeded": 0}
+        if settings.collection_enabled:
+            processed = await engine.run_pending(
+                session, max_jobs=max_jobs, settings=settings
+            )
+        else:
+            processed = 0
+        return {"enqueued": enqueued, "processed": processed, **retry_stats}
     finally:
         session.close()
 

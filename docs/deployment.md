@@ -25,6 +25,34 @@
 - `SEARCH_CACHE_TTL_HOURS` 默认 24，`EMPTY_SEARCH_CACHE_TTL_HOURS` 默认 168（空结果更久，因为用户会反复搜同一个不存在的名字）。
 - 迁移：`alembic upgrade head`（0002_search_cache）。
 
+上游“繁忙”自动重试 / 后台采集（默认全部关闭，省钱优先）：
+
+- **默认关闭后台采集与重试**：`COLLECTION_ENABLED=false`、`SEARCH_RETRY_ENABLED=false`。此时**没有任何周期性付费调用**；网站仅当用户搜索本地未命中（`ALLOW_COLD_START_SEARCH=true`）时才实时调用数据源一次，并写入 `search_cache`（同词同 TTL 内不再付费）。
+- 需要主动采集时再显式打开 `COLLECTION_ENABLED=true`（worker），并建议同时设置 `METRICS_MIN_INTERVAL_HOURS`（默认 24），**同一文章在冷却窗口内不再重复抓取指标**（彻底杜绝“每篇每几秒一次”的烧钱模式）。
+- **预算硬上限**：`DAILY_BUDGET_USD`/`MONTHLY_BUDGET_USD` 一旦超出，`run_pending` 与搜索重试**立即全部停止发起付费调用**（不再只跳 C 级）。
+- 搜索重试若开启（`SEARCH_RETRY_ENABLED=true`）：命上游 `upstream_busy` 返回 `503 DATA_SOURCE_BUSY` 并入 `search_retry_queue`，后台按退避重试、成功后入库+刷新缓存。行级原子领取，多进程安全。
+- **运营总览**：`GET /api/v1/admin/usage`（管理员）返回余额、今日/本月消耗与预算、后台开关与近期调用；前端页面 `/admin/usage`。
+- 迁移：`alembic upgrade head`（0007_search_retry_queue）。
+
+### 紧急止血 / 确认线上无空转 worker（重要）
+
+线上 ECS 的 `wechatinsight-worker`（systemd）若连同一个 Neon 库 + Qovia Key，会持续扣费（历史上每 4–5 秒一次 `article_metrics` 即源于此）。代码已默认 `COLLECTION_ENABLED=false`，但仍需在服务器上确认常驻 worker 关闭：
+
+```bash
+sudo systemctl stop wechatinsight-worker
+sudo systemctl disable wechatinsight-worker    # 防止重启后自启
+sudo systemctl status wechatinsight-worker      # 期望 inactive (dead)
+```
+
+部署新代码后即便误启 worker，`run_cycle` 在 `COLLECTION_ENABLED=false` 时也不会发起周期性付费调用；确需采集再临时 `systemctl start`，并在 `/admin/usage` 盯余额/消耗。线上 `.env` 同时确认：
+
+```bash
+COLLECTION_ENABLED=false
+SEARCH_RETRY_ENABLED=false
+```
+
+**一键自检（部署后/排障用）**：`python -m scripts.cost_check --window 15` 会打印开关状态、余额、近 15 分钟调用（区分“任务/后台”与用户搜索）、按接口扣费分布与活跃任务；若后台开关关着却仍有任务调用，退出码为 `3` 并提示关闭 worker。
+
 ## 1. 组件与位置
 
 | 组件 | 位置 |
@@ -315,7 +343,11 @@ WECHAT_APP_ID=...
 WECHAT_APP_SECRET=...
 WECHAT_REDIRECT_URI=https://api.topsaypan.com/api/v1/auth/wechat/callback
 WECHAT_STATE_TTL_SECONDS=600
+# 本地/演示用：即使 APP_ENV=production 也允许 mock 扫码（生产保持注释/删掉）
+# WECHAT_MOCK_ENABLED=true
 PROOF_MAX_MB=5
+# 上线前务必改为 true，强制提交登记时上传证明材料
+ONBOARDING_PROOF_REQUIRED=true
 UPLOAD_DIR=/var/lib/wechatinsight/uploads
 ADMIN_PHONE=...
 ADMIN_PASSWORD=...
@@ -335,8 +367,10 @@ sudo chown wechat:wechat /var/lib/wechatinsight/uploads
 ### 12.3 微信扫码回调
 
 - 需微信开放平台「网站应用」审核通过、已备案域名与授权回调域；回调地址设为 `WECHAT_REDIRECT_URI`。
+- 登录页内嵌官方二维码（`WxLogin` JS SDK）：前端调 `/api/v1/auth/wechat/authorize` 拿到 `appid/redirect_uri/state` 后渲染，无需跳转。
+- **回调地址建议走前端同源代理**（`https://www.wechatinsight.com/api/v1/auth/wechat/callback`，经 Next `rewrites` 转发到后端），这样会话 Cookie 落在前端域，避免前后端不同子域导致登录后仍匿名。微信「授权回调域」需与该回调地址的域名一致。
 - 回调处理完成后 302 跳回 `FRONTEND_BASE_URL`。
-- 生产禁用 mock 登录；未配置真实凭据时微信扫码不可用（账号密码仍可用）。
+- 生产默认禁用 mock；未配置真实凭据时微信扫码不可用（账号密码仍可用）。如需在生产临时演示，显式设 `WECHAT_MOCK_ENABLED=true`（会显示「模拟微信登录」）。
 
 ### 12.4 前端（Vercel）
 

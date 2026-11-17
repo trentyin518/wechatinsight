@@ -20,9 +20,9 @@ export default async function HomePage() {
             海量KOL资源对接，数据赋能品牌方精准营销，让广告投放更高效
           </p>
           {user ? (
-            <a className="btn-use" href="#ad-value">
+            <Link className="btn-use" href="/console">
               立即使用
-            </a>
+            </Link>
           ) : (
             <Link className="btn-use" href="/login">
               立即使用

@@ -6,6 +6,18 @@ WeChat endpoints (GET, query params, documented at qovia.ai/zh/docs/api-referenc
 - ``/v1/raw/wechat/article_metrics``(url)             -> reads/likes/watching/comments/shares
 - ``/v1/raw/wechat/channel_search``                   -> video-channel accounts (not used by MVP)
 
+Field coverage per the docs:
+- account_search returns id, mp_id, name, wechat_id, avatar, description,
+  verified, verified_by, type — i.e. profile facts only.
+- articles returns id, title, url, published_at, cover, digest, author,
+  ip_region, is_original, is_paid, reads_label, likes (+ cursor/has_more).
+- article_metrics returns reads, likes, watching, comments, shares, updated_at.
+
+Qovia does NOT expose account-level commercial estimates (预估活跃粉丝、报价、
+30天广告数、西瓜指数、所属行业、运营地区、头条平均阅读 etc.). Those provider
+fields stay ``None`` rather than being fabricated, and derived aggregates
+(发文篇数 / 平均阅读) can be computed from articles + metrics if needed.
+
 All failures are translated into domain errors; raw vendor bodies and the API
 key are never leaked. ``meta.charged_usd`` reflects real billing per call.
 """
@@ -13,6 +25,7 @@ key are never leaked. ``meta.charged_usd`` reflects real billing per call.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +33,7 @@ import httpx
 
 from app.core.errors import (
     DataSourceBillingError,
+    DataSourceBusy,
     DataSourceRateLimited,
     DataSourceUnavailable,
     ProviderError,
@@ -44,6 +58,19 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
+def _is_upstream_busy(response: httpx.Response) -> bool:
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    err = body.get("error") if isinstance(body, dict) else None
+    if isinstance(err, dict):
+        code = str(err.get("code") or "")
+        msg = str(err.get("message") or "")
+        return "busy" in code or "busy" in msg
+    return False
+
+
 def _as_int(value: Any) -> int | None:
     if value is None or value == "":
         return None
@@ -51,6 +78,13 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _clean_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = re.sub(r"<[^>]*>", "", str(value))
+    return text.strip() or None
 
 
 class QoviaProvider:
@@ -107,10 +141,14 @@ class QoviaProvider:
                 if response.status_code == 429:
                     raise DataSourceRateLimited()
                 if response.status_code >= 500:
+                    busy = _is_upstream_busy(response)
                     if attempt < self._max_retries:
-                        await asyncio.sleep(self._backoff * (2**attempt))
+                        # Upstream "busy" bursts tend to last a little longer, so
+                        # wait a bit more before retrying those.
+                        delay = self._backoff * (2**attempt) * (3 if busy else 1)
+                        await asyncio.sleep(delay)
                         continue
-                    raise DataSourceUnavailable()
+                    raise DataSourceBusy() if busy else DataSourceUnavailable()
                 raise ProviderError("数据源请求被拒绝。", code="DATA_SOURCE_BAD_REQUEST")
         finally:
             if owns_client:
@@ -123,10 +161,10 @@ class QoviaProvider:
         return ProviderAccount(
             provider=self.name,
             provider_account_id=str(item.get("mp_id") or item.get("id") or ""),
-            name=str(item.get("name") or ""),
+            name=_clean_text(item.get("name")) or "",
             wechat_id=item.get("wechat_id"),
             avatar_url=item.get("avatar"),
-            description=item.get("description"),
+            description=_clean_text(item.get("description")),
             verification_subject=item.get("verified_by") if verified else None,
             account_type=item.get("type"),
         )
@@ -135,12 +173,13 @@ class QoviaProvider:
         return ProviderArticle(
             provider=self.name,
             provider_article_id=str(item["id"]) if item.get("id") is not None else None,
-            title=str(item.get("title") or ""),
+            title=_clean_text(item.get("title")) or "",
             url=str(item.get("url") or ""),
             published_at=_parse_dt(item.get("published_at")),
             cover_url=item.get("cover"),
-            summary=item.get("digest"),
-            author=item.get("author"),
+            summary=_clean_text(item.get("digest")),
+            author=_clean_text(item.get("author")),
+            ip_region=item.get("ip_region"),
             is_original=item.get("is_original"),
             is_paid=item.get("is_paid"),
         )
@@ -203,3 +242,15 @@ class QoviaProvider:
         if not isinstance(data, dict) or not data:
             return None
         return self._map_metrics(data)
+
+    async def get_billing(self) -> dict[str, Any] | None:
+        """Account billing/balance info (best-effort; never raises)."""
+        try:
+            payload = await self._get("/v1/account", {})
+        except Exception:
+            return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            return None
+        billing = data.get("billing")
+        return billing if isinstance(billing, dict) else None

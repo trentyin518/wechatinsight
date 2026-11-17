@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,10 +13,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 
 logger = logging.getLogger("wechat_insight")
+
+
+async def _search_retry_loop(settings: Settings) -> None:
+    """Periodically drain the search-retry queue from inside the API process.
+
+    This makes background search retries progress even when the standalone
+    worker is not running. It stays cheap: a due-retries DB scan per interval.
+    """
+    from app.db.session import SessionLocal
+    from app.providers.registry import get_provider
+    from app.services import search_retry
+
+    interval = settings.search_retry_interval_seconds
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            session = SessionLocal()
+            try:
+                await search_retry.run_search_retries(session, get_provider(), settings)
+            finally:
+                session.close()
+        except asyncio.CancelledError:
+            break
+        except Exception:  # never let the loop die
+            logger.exception("search retry loop error")
 
 
 @asynccontextmanager
@@ -38,7 +65,17 @@ async def lifespan(app: FastAPI):
             db.close()
     except Exception:  # pragma: no cover - defensive
         logger.exception("admin bootstrap skipped")
-    yield
+
+    retry_task: asyncio.Task | None = None
+    if settings.search_retry_enabled and settings.search_retry_interval_seconds > 0:
+        retry_task = asyncio.create_task(_search_retry_loop(settings))
+    try:
+        yield
+    finally:
+        if retry_task is not None:
+            retry_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await retry_task
 
 
 def create_app() -> FastAPI:

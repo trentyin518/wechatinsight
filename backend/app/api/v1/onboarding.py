@@ -122,9 +122,15 @@ def submit(
     if user.onboarding_status == OnboardingStatus.PENDING:
         raise Conflict("资料正在审核中，请耐心等待。", code="ALREADY_PENDING")
 
-    proof = db.get(OnboardingProof, payload.proof_id)
-    if proof is None or proof.user_id != user.id:
-        raise NotFoundError("证明材料不存在或已失效，请重新上传。")
+    settings = get_settings()
+    proof_id: int | None = None
+    if payload.proof_id is not None:
+        proof = db.get(OnboardingProof, payload.proof_id)
+        if proof is None or proof.user_id != user.id:
+            raise NotFoundError("证明材料不存在或已失效，请重新上传。")
+        proof_id = proof.id
+    elif settings.onboarding_proof_required:
+        raise ValidationError("请上传证明材料。")
 
     submission = OnboardingSubmission(
         user_id=user.id,
@@ -137,7 +143,7 @@ def submit(
         contact_name=payload.contact_name,
         contact_phone=payload.contact_phone,
         needs=(payload.needs or None),
-        proof_id=proof.id,
+        proof_id=proof_id,
     )
     db.add(submission)
     user.onboarding_status = OnboardingStatus.PENDING
@@ -145,6 +151,7 @@ def submit(
     db.refresh(submission)
     return OnboardingStatusResponse(
         status=user.onboarding_status,
+        proof_required=settings.onboarding_proof_required,
         submission=SubmissionSummary(
             id=submission.id,
             status=submission.status,
@@ -160,6 +167,7 @@ def status(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> OnboardingStatusResponse:
+    settings = get_settings()
     latest = db.scalar(
         select(OnboardingSubmission)
         .where(OnboardingSubmission.user_id == user.id)
@@ -174,7 +182,11 @@ def status(
             submitted_at=latest.submitted_at,
             reviewed_at=latest.reviewed_at,
         )
-    return OnboardingStatusResponse(status=user.onboarding_status, submission=summary)
+    return OnboardingStatusResponse(
+        status=user.onboarding_status,
+        submission=summary,
+        proof_required=settings.onboarding_proof_required,
+    )
 
 
 @router.get("/submissions", response_model=SubmissionListResponse)

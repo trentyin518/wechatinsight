@@ -75,7 +75,8 @@ npm run dev        # http://localhost:3000
 - 前端同源代理：`frontend/next.config.mjs` 用 `rewrites` 把 `/api/*` 代理到后端（`API_PROXY_TARGET`，默认 `http://localhost:8000`），Cookie 落在 `:3000` 同源；Server Component 读 Cookie 并转发到后端。
 - 管理员引导：`.env` 设 `ADMIN_PHONE`/`ADMIN_PASSWORD`，启动时幂等创建管理员，用于审核（`/admin/reviews`）。
 - 上传目录：`UPLOAD_DIR`（默认 `backend/uploads`），证明文件经鉴权接口受控读取，不静态暴露。
-- 微信扫码：配置 `WECHAT_APP_ID/WECHAT_APP_SECRET/WECHAT_REDIRECT_URI` 启用真实 OAuth2；未配置且非生产时登录页显示「模拟微信登录」。
+- 登记证明：`.env` 的 `ONBOARDING_PROOF_REQUIRED` 控制提交登记时是否强制要求上传证明文件，默认 `false`（测试期可跳过），上线前改 `true`。
+- 微信扫码：配置 `WECHAT_APP_ID/WECHAT_APP_SECRET/WECHAT_REDIRECT_URI` 启用真实 OAuth2，登录页会内嵌官方二维码（`WxLogin` JS SDK）；未配置且非生产时显示「模拟微信登录」。若本地以 `APP_ENV=production` 运行又想在演示中用 mock，设 `WECHAT_MOCK_ENABLED=true`。
 
 **打开强制登录（灰度）**：
 
@@ -84,6 +85,11 @@ npm run dev        # http://localhost:3000
 3. 回滚：两者改回 `false` 即恢复公开访问（无破坏性迁移）。
 
 端到端自测（mock）：注册/登录 → 首次引导 `/onboarding` 填表+上传 → `/onboarding/pending` → 管理员 `/admin/reviews` 通过 → 首页可用；驳回则 `/onboarding/rejected` 可重提。
+
+> 当前本地已**开启**灰度（`.env` 的 `AUTH_ENFORCED=true` + `frontend/.env.development.local` 的 `NEXT_PUBLIC_AUTH_ENFORCED=true`）。
+> 管理员由 `.env` 的 `ADMIN_PHONE`/`ADMIN_PASSWORD` 启动时幂等创建，登录后访问 `/admin/reviews` 审核登记。
+> 注意：`APP_ENV=production` 时会话 Cookie 带 `Secure`；浏览器把 `http://localhost` 视为安全上下文可直接登录，但用 `http://<局域网IP>:3000` 访问时 Cookie 不会写入，请改用 `localhost` 或走 HTTPS。
+> 接口验收码：未登录 `401 UNAUTHENTICATED`；未登记 `403 ONBOARDING_REQUIRED`；待审 `403 ONBOARDING_PENDING`；驳回 `403 ONBOARDING_REJECTED`；通过后 `200`。
 
 ## 5. 测试
 
@@ -109,6 +115,11 @@ DEFAULT_PROVIDER=qovia python -m scripts.check_provider 科技
 
 - 切到真实数据：把 `.env` 的 `DEFAULT_PROVIDER=qovia`。当前账户余额为 0、靠 trial（`meta.billed=false`），正式采集前需充值；每次成功调用约 `$0.005`（以账单为准）。
 - 错误会映射为：`402` 余额不足、`429` 限流、`403` 权限、`404` 无数据、`5xx` 数据源不可用，均不外泄原始响应或密钥。
+- **省钱优先（默认关闭后台）**：`COLLECTION_ENABLED=false`、`SEARCH_RETRY_ENABLED=false` 时**没有任何周期性付费调用**；仅当用户搜索本地未命中才实时调用一次上游并写入 `search_cache`（同词同 TTL 内不再付费）。
+  - 主动采集需显式 `COLLECTION_ENABLED=true`，并设置 `METRICS_MIN_INTERVAL_HOURS`（默认 24），同一文章冷却窗口内不重复抓指标。
+  - 预算硬上限：`DAILY_BUDGET_USD`/`MONTHLY_BUDGET_USD` 超限即**全部停止**付费调用（`run_pending` 与搜索重试都停）。
+  - 预上线想“零 API”：设 `ALLOW_COLD_START_SEARCH=false`，只用本地数据。
+- **运营总览**：`GET /api/v1/admin/usage`（管理员）+ 前端 `/admin/usage`，展示余额、今日/本月消耗/预算、后台开关、近期调用。
 
 ## 7. 常见问题
 
