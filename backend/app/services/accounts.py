@@ -81,7 +81,12 @@ async def search_accounts(
         daily_budget=settings.daily_budget_usd,
         monthly_budget=settings.monthly_budget_usd,
     ):
-        raise QuotaExceeded()
+        # This is our own cost guard (DAILY/MONTHLY_BUDGET_USD), NOT an upstream
+        # quota. Say so explicitly so it is not confused with the provider.
+        raise QuotaExceeded(
+            "今日/本月已达成本预算上限（成本保护），并非数据源额度不足；"
+            "请稍后再试或调整 DAILY_BUDGET_USD / MONTHLY_BUDGET_USD。"
+        )
 
     try:
         provider = provider or get_provider()
