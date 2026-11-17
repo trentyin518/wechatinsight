@@ -4,6 +4,20 @@ const apiTarget =
   process.env.NEXT_PUBLIC_API_BASE ||
   "http://localhost:8000";
 
+// Loud warning: rewrites() bakes this target in at build time. On Vercel the
+// backend is NOT on localhost, so a default here makes every /api/* call 404
+// (the request falls through to the Next router). Set API_PROXY_TARGET.
+if (
+  process.env.NODE_ENV === "production" &&
+  /(^https?:\/\/)?(localhost|127\.0\.0\.1)/.test(apiTarget)
+) {
+  console.warn(
+    `[next.config] API 代理目标仍是本机地址：${apiTarget}。` +
+      "线上请在 Vercel 设置 API_PROXY_TARGET=https://<你的后端域名>（如 https://api.topsaypan.com）后重新部署，" +
+      "否则 /api/* 会 404。",
+  );
+}
+
 const nextConfig = {
   reactStrictMode: true,
   // Allow building even when the API base is only known at deploy time.

@@ -374,9 +374,28 @@ sudo chown wechat:wechat /var/lib/wechatinsight/uploads
 
 ### 12.4 前端（Vercel）
 
-- 代理目标：`API_PROXY_TARGET=https://api.topsaypan.com`（Next `rewrites` 构建期读取）。
-- 门禁：`NEXT_PUBLIC_AUTH_ENFORCED=true`、`NEXT_PUBLIC_SESSION_COOKIE_NAME=wi_session`。
-- 仍保留 `NEXT_PUBLIC_API_BASE` 供 SSR 直连。
+Vercel 项目 → Settings → Environment Variables（Production/Preview 都要），**必须**设置：
+
+```bash
+API_PROXY_TARGET=https://api.topsaypan.com
+NEXT_PUBLIC_API_BASE=https://api.topsaypan.com
+NEXT_PUBLIC_AUTH_ENFORCED=true
+NEXT_PUBLIC_SESSION_COOKIE_NAME=wi_session
+```
+
+> `rewrites()` 在**构建期**读取 `API_PROXY_TARGET`，所以改完环境变量**必须重新部署（Redeploy）**才生效。
+
+**典型故障：登录/接口返回 HOST 404（如 `www.wechatinsight.com/api/v1/auth/login -> 404`）**
+- 根因：没配 `API_PROXY_TARGET`，默认转发到 `http://localhost:8000`，Vercel 上没有该后端 → 请求落到 Next 路由无匹配 → 404（前端表现为“请求失败”）。
+- 处置：按上表设置 `API_PROXY_TARGET`/`NEXT_PUBLIC_API_BASE` 指向可用后端并 Redeploy。
+- 验证（浏览器/命令行都应返回 JSON，不是 404）：
+
+```bash
+# 后端直连健康检查
+curl -s https://api.topsaypan.com/health
+# 经前端同源代理（走 Vercel rewrite → 后端）
+curl -s https://www.wechatinsight.com/api/v1/overview | head -c 200
+```
 
 ### 12.5 灰度与回滚
 

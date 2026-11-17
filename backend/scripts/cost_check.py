@@ -24,12 +24,20 @@ for _p in (str(_BACKEND_DIR), str(_REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from sqlalchemy import func, select  # noqa: E402
+try:
+    from sqlalchemy import func, select  # noqa: E402
 
-from app.core.config import get_settings  # noqa: E402
-from app.db.models import ApiUsageLog, SearchRetryQueue, SyncJob  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
-from app.providers.registry import get_provider  # noqa: E402
+    from app.core.config import get_settings  # noqa: E402
+    from app.db.models import ApiUsageLog, SearchRetryQueue, SyncJob  # noqa: E402
+    from app.db.session import SessionLocal  # noqa: E402
+    from app.providers.registry import get_provider  # noqa: E402
+except ModuleNotFoundError as exc:  # wrong interpreter / not the project venv
+    print(f"缺少依赖或缺包：{exc.name}")
+    print("请用项目虚拟环境运行（不要在 backend/ 之外用系统 python）：")
+    print("  cd backend && .venv/bin/python -m scripts.cost_check --window 15")
+    print("  # 或")
+    print("  cd backend && .venv/bin/python scripts/cost_check.py --window 15")
+    raise SystemExit(2) from exc
 
 
 async def _balance() -> str:

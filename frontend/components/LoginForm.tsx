@@ -58,9 +58,14 @@ export function LoginForm() {
   async function onPasswordLogin(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    const trimmedPhone = phone.trim();
+    if (!/^1\d{10}$/.test(trimmedPhone)) {
+      setError("请输入 11 位手机号（如 13900000000）。");
+      return;
+    }
     setLoading(true);
     try {
-      await loginWithPassword(phone.trim(), password);
+      await loginWithPassword(trimmedPhone, password);
       go();
     } catch (err) {
       setError(toApiError(err).message);
