@@ -10,11 +10,14 @@ Covers the cost-safety contract:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.core.config import get_settings
-from app.db.models import ApiUsageLog, ArticleMetric, JobType, SyncJob, WechatArticle
+from app.db.models import ApiUsageLog, ArticleMetric, JobStatus, JobType, SyncJob, WechatArticle
 from app.providers.base import ProviderAccount
 from app.providers.mock import MockProvider
 from app.repositories import accounts as accounts_repo
+from app.repositories import jobs as jobs_repo
 from app.services import accounts as accounts_service
 from app.services import collection as collection_service
 from worker import engine
@@ -134,4 +137,101 @@ async def test_pending_collection_status_reflects_queued_jobs(session):
     collecting = accounts_repo.ids_with_pending_collection(session, [a1.id, a2.id])
     assert a1.id in collecting
     assert a2.id not in collecting
+
+
+async def test_start_is_atomic_claim(session):
+    from app.db.session import SessionLocal
+    from app.repositories import jobs as jobs_repo
+
+    job = jobs_repo.create_job(
+        session,
+        job_type=JobType.SYNC_METRICS,
+        target_type="article",
+        target_id=1,
+        provider="mock",
+    )
+    session.commit()
+
+    # First claim wins...
+    assert jobs_repo.start(session, job) is True
+    session.commit()  # persist RUNNING and release SQLite's write lock
+
+    other = SessionLocal()
+    try:
+        # ...a concurrent consumer claiming the same job is rejected, so the
+        # job is never processed (or billed) twice.
+        other_job = other.get(SyncJob, job.id)
+        assert jobs_repo.start(other, other_job) is False
+    finally:
+        other.close()
+
+
+async def test_inline_drain_processes_demand_jobs_without_worker():
+    from app.db.session import SessionLocal
+    from app.services.demand_drain import drain_demand_jobs
+
+    setup = SessionLocal()
+    try:
+        _seed_accounts(setup, 1)
+        account = setup.query(accounts_repo.WechatAccount).one()
+        assert collection_service.enqueue_accounts_for_sync(setup, [account]) == 1
+        setup.commit()
+    finally:
+        setup.close()
+
+    processed = await drain_demand_jobs(_settings())
+    assert processed >= 1
+
+    check = SessionLocal()
+    try:
+        account = check.query(accounts_repo.WechatAccount).one()
+        assert account.article_count and account.article_count > 0
+        assert account.avg_read is not None
+        assert account.last_synced_at is not None
+        # Nothing left collecting once the drain has run.
+        assert accounts_repo.ids_with_pending_collection(check, [account.id]) == set()
+    finally:
+        check.close()
+
+
+async def test_collection_states_classify_accounts(session):
+    _seed_accounts(session, 5)
+    ordered = (
+        session.query(accounts_repo.WechatAccount)
+        .order_by(accounts_repo.WechatAccount.id)
+        .all()
+    )
+    collected, empty, failed, collecting, idle = ordered
+
+    collected.article_count = 5  # has data
+    empty.last_synced_at = datetime.now(timezone.utc)  # synced but zero articles
+
+    failed_job = jobs_repo.create_job(
+        session,
+        job_type=JobType.SYNC_ARTICLES,
+        target_type="account",
+        target_id=failed.id,
+        provider="qovia",
+    )
+    failed_job.status = JobStatus.FAILED
+    failed_job.error_code = "DATA_SOURCE_BILLING"
+
+    jobs_repo.create_job(
+        session,
+        job_type=JobType.SYNC_ARTICLES,
+        target_type="account",
+        target_id=collecting.id,
+        provider="qovia",
+    )
+    session.commit()
+
+    states = accounts_repo.collection_states(
+        session, [collected, empty, failed, collecting, idle]
+    )
+    assert states[collected.id].state == "collected"
+    assert states[empty.id].state == "empty"
+    assert states[failed.id].state == "failed"
+    assert states[failed.id].error_code == "DATA_SOURCE_BILLING"
+    assert states[collecting.id].state == "collecting"
+    assert states[idle.id].state == "idle"
 

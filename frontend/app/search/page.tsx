@@ -71,7 +71,7 @@ async function Results({ q, page }: { q: string; page: number }) {
             <h3>{account.name}</h3>
             {account.wechat_id ? <p className="muted small">微信号：{account.wechat_id}</p> : null}
             {account.description ? <p className="muted small">{account.description}</p> : null}
-            <DataProvenance provider={account.provider} observedAt={account.last_synced_at} collecting={account.collecting} />
+            <DataProvenance provider={account.provider} observedAt={account.last_synced_at} state={account.collection_state} error={account.collection_error} collecting={account.collecting} />
           </Link>
         ))}
       </div>

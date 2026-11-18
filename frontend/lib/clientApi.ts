@@ -9,6 +9,8 @@ import type {
   SelectionState,
   SubmissionListResponse,
   SubmissionOut,
+  SyncDrainResult,
+  SyncHealth,
   UsageOverview,
   UserOut,
   WechatAuthorizeResponse,
@@ -132,6 +134,17 @@ export function rejectSubmission(id: number, reason: string): Promise<Submission
 
 export function getUsageOverview(): Promise<UsageOverview> {
   return requestJson<UsageOverview>("/api/v1/admin/usage");
+}
+
+export function getSyncHealth(): Promise<SyncHealth> {
+  return requestJson<SyncHealth>("/api/v1/admin/sync");
+}
+
+export function triggerSyncDrain(maxJobs = 200): Promise<SyncDrainResult> {
+  return requestJson<SyncDrainResult>(`/api/v1/admin/sync/drain?max_jobs=${maxJobs}`, {
+    method: "POST",
+    credentials: "include",
+  });
 }
 
 export function addSelection(accountId: number): Promise<SelectionState> {

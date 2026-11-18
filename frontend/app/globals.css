@@ -248,6 +248,16 @@ a.card:hover {
   font-weight: 500;
 }
 
+.provenance-failed {
+  color: #b42318;
+  font-weight: 500;
+}
+
+.provenance-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .provenance-collecting::before {
   content: "";
   width: 7px;

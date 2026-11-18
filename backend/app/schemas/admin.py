@@ -32,3 +32,46 @@ class UsageOverview(BaseModel):
     over_daily_budget: bool
     over_monthly_budget: bool
     recent: list[UsageLogItem]
+
+
+class SyncFailureReason(BaseModel):
+    error_code: str | None
+    count: int
+
+
+class SyncFailedJob(BaseModel):
+    id: int
+    job_type: str
+    target_type: str
+    target_id: int | None
+    error_code: str | None
+    error_message: str | None
+    updated_at: datetime
+
+
+class SyncHealth(BaseModel):
+    """At-a-glance health of the sync-job queue (catches "nothing consuming")."""
+
+    status_counts: dict[str, int]
+    total_jobs: int
+    # Stuck-queue signal: how many jobs are queued and how old the oldest is.
+    pending_count: int
+    pending_oldest_at: datetime | None
+    pending_oldest_age_seconds: int | None
+    # Failure breakdown (top reasons) + the most recent failures for triage.
+    failed_reasons: list[SyncFailureReason]
+    recent_failed: list[SyncFailedJob]
+    # Throughput in the last 24h, to tell "idle" from "broken".
+    success_24h: int
+    failed_24h: int
+    # Human hint when the queue looks stuck (e.g. no worker running).
+    worker_hint: str | None
+
+
+class SyncDrainResult(BaseModel):
+    """Response for a manual "drain the backlog" trigger."""
+
+    scheduled: bool
+    pending: int
+    max_jobs: int
+    message: str

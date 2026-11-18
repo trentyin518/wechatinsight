@@ -84,6 +84,70 @@ def ids_with_pending_collection(session: Session, account_ids: list[int]) -> set
     return pending | metrics_accounts
 
 
+@dataclass(slots=True)
+class CollectionState:
+    """Coarse enrichment status for the UI, so "—" is never ambiguous.
+
+    One of: ``idle`` (never attempted), ``collecting`` (job queued/running),
+    ``failed`` (last attempt errored, e.g. provider billing/auth), ``empty``
+    (synced but the source has no public articles) or ``collected`` (has data).
+    """
+
+    state: str
+    error_code: str | None = None
+
+
+def collection_states(
+    session: Session, accounts: list[WechatAccount]
+) -> dict[int, CollectionState]:
+    """Enrichment status for each account, computed in a couple of set queries.
+
+    Precedence: in-flight > has-data > last-attempt-failed > synced-but-empty >
+    never-attempted. Showing "failed" only when there's no data keeps a stale
+    refresh failure from hiding otherwise-usable numbers.
+    """
+    if not accounts:
+        return {}
+    ids = [a.id for a in accounts]
+    collecting = ids_with_pending_collection(session, ids)
+
+    latest = (
+        select(SyncJob.target_id, func.max(SyncJob.id).label("mid"))
+        .where(
+            SyncJob.job_type == JobType.SYNC_ARTICLES,
+            SyncJob.target_type == "account",
+            SyncJob.target_id.in_(ids),
+        )
+        .group_by(SyncJob.target_id)
+        .subquery()
+    )
+    latest_rows = session.execute(
+        select(SyncJob.target_id, SyncJob.status, SyncJob.error_code).join(
+            latest, SyncJob.id == latest.c.mid
+        )
+    ).all()
+    latest_map: dict[int, tuple[str, str | None]] = {
+        target_id: (status, code) for target_id, status, code in latest_rows
+    }
+
+    states: dict[int, CollectionState] = {}
+    for account in accounts:
+        if account.id in collecting:
+            states[account.id] = CollectionState("collecting")
+            continue
+        if account.article_count and account.article_count > 0:
+            states[account.id] = CollectionState("collected")
+            continue
+        status, code = latest_map.get(account.id, ("", None))
+        if status == JobStatus.FAILED:
+            states[account.id] = CollectionState("failed", code)
+        elif account.last_synced_at is not None:
+            states[account.id] = CollectionState("empty")
+        else:
+            states[account.id] = CollectionState("idle")
+    return states
+
+
 def similar_accounts(
     session: Session, target: WechatAccount, limit: int = 8
 ) -> list[WechatAccount]:

@@ -93,6 +93,12 @@ class Settings:
     # metrics entirely). Averages are computed over at most this many latest
     # articles, which keeps the cost per viewed account bounded.
     metrics_per_account_limit: int = 10
+    # The standalone worker is the primary consumer of demand jobs. When it is
+    # not running (e.g. local dev that only starts the API), the API drains a
+    # bounded batch after responding to a search/detail request so the feature
+    # still works end to end. Job claiming is atomic, so running this alongside
+    # the worker never double-processes. 0 disables the in-process drain.
+    on_demand_inline_drain_max_jobs: int = 60
 
     # Authentication & onboarding. AUTH_ENFORCED gates whether data endpoints
     # require an approved session; it defaults to False so the endpoints and UI
@@ -156,6 +162,9 @@ def get_settings() -> Settings:
         on_demand_sync_ttl_hours=_int(os.getenv("ON_DEMAND_SYNC_TTL_HOURS"), 12),
         article_sync_max_pages=_int(os.getenv("ARTICLE_SYNC_MAX_PAGES"), 1),
         metrics_per_account_limit=_int(os.getenv("METRICS_PER_ACCOUNT_LIMIT"), 10),
+        on_demand_inline_drain_max_jobs=_int(
+            os.getenv("ON_DEMAND_INLINE_DRAIN_MAX_JOBS"), 60
+        ),
         auth_enforced=_bool(os.getenv("AUTH_ENFORCED"), False),
         session_ttl_hours=_int(os.getenv("SESSION_TTL_HOURS"), 168),
         session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "wi_session"),

@@ -34,6 +34,13 @@ class AccountOut(ORMModel):
     # True while a background demand-driven collection job is queued/running for
     # this account (so the UI can show "采集中…" instead of a static "暂不可用").
     collecting: bool = False
+    # Richer enrichment status: idle | collecting | failed | empty | collected.
+    # Drives a precise label so an empty "—" is distinguishable from "still
+    # collecting" or "provider has no public articles".
+    collection_state: str | None = None
+    # Raw error code of the last failed attempt (e.g. DATA_SOURCE_BILLING) when
+    # collection_state == "failed".
+    collection_error: str | None = None
 
 
 class AccountDetail(ORMModel):
@@ -63,6 +70,8 @@ class AccountDetail(ORMModel):
     is_original: bool | None = None
     has_video: bool | None = None
     collecting: bool = False
+    collection_state: str | None = None
+    collection_error: str | None = None
 
 
 class AccountSearchResponse(ORMModel):

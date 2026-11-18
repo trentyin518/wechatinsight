@@ -23,6 +23,8 @@ export interface AccountOut {
   is_original?: boolean | null;
   has_video?: boolean | null;
   collecting?: boolean;
+  collection_state?: string | null;
+  collection_error?: string | null;
 }
 
 export interface AccountDetail extends AccountOut {
@@ -263,4 +265,39 @@ export interface UsageOverview {
   over_daily_budget: boolean;
   over_monthly_budget: boolean;
   recent: UsageLogItem[];
+}
+
+export interface SyncFailureReason {
+  error_code: string | null;
+  count: number;
+}
+
+export interface SyncFailedJob {
+  id: number;
+  job_type: string;
+  target_type: string;
+  target_id: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  updated_at: string;
+}
+
+export interface SyncHealth {
+  status_counts: Record<string, number>;
+  total_jobs: number;
+  pending_count: number;
+  pending_oldest_at: string | null;
+  pending_oldest_age_seconds: number | null;
+  failed_reasons: SyncFailureReason[];
+  recent_failed: SyncFailedJob[];
+  success_24h: number;
+  failed_24h: number;
+  worker_hint: string | null;
+}
+
+export interface SyncDrainResult {
+  scheduled: boolean;
+  pending: number;
+  max_jobs: number;
+  message: string;
 }

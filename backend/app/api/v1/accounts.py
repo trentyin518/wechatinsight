@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_approved
+from app.core.config import get_settings
 from app.core.errors import NotFoundError
 from app.db.models import ArticleMetric, User, WechatAccount
 from app.repositories import accounts as accounts_repo
-from app.repositories.accounts import AccountFilters
+from app.repositories.accounts import AccountFilters, CollectionState
 from app.schemas.accounts import (
     AccountDetail,
     AccountOut,
@@ -19,11 +20,12 @@ from app.schemas.accounts import (
 from app.schemas.articles import ArticleListItem, ArticleListResponse
 from app.services import accounts as accounts_service
 from app.services import articles as articles_service
+from app.services.demand_drain import drain_demand_jobs
 
 router = APIRouter(tags=["accounts"])
 
 
-def _account_out(account: WechatAccount, *, collecting: bool = False) -> AccountOut:
+def _account_out(account: WechatAccount, *, state: CollectionState | None = None) -> AccountOut:
     return AccountOut(
         id=account.id,
         name=account.name,
@@ -48,11 +50,13 @@ def _account_out(account: WechatAccount, *, collecting: bool = False) -> Account
         xigua_index=account.xigua_index,
         is_original=account.is_original,
         has_video=account.has_video,
-        collecting=collecting,
+        collecting=bool(state and state.state == "collecting"),
+        collection_state=state.state if state else None,
+        collection_error=state.error_code if state else None,
     )
 
 
-def _account_detail(account: WechatAccount, *, collecting: bool = False) -> AccountDetail:
+def _account_detail(account: WechatAccount, *, state: CollectionState | None = None) -> AccountDetail:
     return AccountDetail(
         id=account.id,
         name=account.name,
@@ -79,7 +83,9 @@ def _account_detail(account: WechatAccount, *, collecting: bool = False) -> Acco
         xigua_index=account.xigua_index,
         is_original=account.is_original,
         has_video=account.has_video,
-        collecting=collecting,
+        collecting=bool(state and state.state == "collecting"),
+        collection_state=state.state if state else None,
+        collection_error=state.error_code if state else None,
     )
 
 
@@ -102,6 +108,7 @@ def _article_item(article, metric: ArticleMetric | None) -> ArticleListItem:
 
 @router.get("/accounts", response_model=AccountSearchResponse)
 async def search_accounts(
+    background: BackgroundTasks,
     q: str = Query("", description="关键词"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -145,11 +152,14 @@ async def search_accounts(
         session, q, page, page_size, filters=filters, mode=mode
     )
     session.commit()
-    collecting = accounts_repo.ids_with_pending_collection(
-        session, [a.id for a in result.items]
-    )
+    states = accounts_repo.collection_states(session, result.items)
+    # The standalone worker normally drains these; if it isn't running (e.g.
+    # local dev with only the API up) this bounded, concurrency-safe drain makes
+    # the demand-driven enrichment actually complete after we respond.
+    if result.items:
+        background.add_task(drain_demand_jobs, get_settings())
     return AccountSearchResponse(
-        items=[_account_out(a, collecting=a.id in collecting) for a in result.items],
+        items=[_account_out(a, state=states.get(a.id)) for a in result.items],
         page=page,
         page_size=page_size,
         total=result.total,
@@ -159,14 +169,19 @@ async def search_accounts(
 @router.get("/accounts/{account_id}", response_model=AccountDetail)
 def get_account(
     account_id: int,
+    background: BackgroundTasks,
     session: Session = Depends(get_db),
     _user: User | None = Depends(require_approved),
 ) -> AccountDetail:
     account = accounts_service.get_account(session, account_id)
     if account is None:
         raise NotFoundError("公众号不存在。")
-    collecting = accounts_repo.ids_with_pending_collection(session, [account.id])
-    return _account_detail(account, collecting=account.id in collecting)
+    state = accounts_repo.collection_states(session, [account]).get(account.id)
+    if state and state.state == "collecting":
+        # Self-heal: opening the account page nudges the queue even if the
+        # standalone worker isn't running.
+        background.add_task(drain_demand_jobs, get_settings())
+    return _account_detail(account, state=state)
 
 
 @router.get("/accounts/{account_id}/similar", response_model=SimilarAccountsResponse)
@@ -180,12 +195,10 @@ def get_similar_accounts(
     if account is None:
         raise NotFoundError("公众号不存在。")
     items = accounts_repo.similar_accounts(session, account, limit=limit)
-    collecting = accounts_repo.ids_with_pending_collection(
-        session, [account.id, *(item.id for item in items)]
-    )
+    states = accounts_repo.collection_states(session, [account, *items])
     return SimilarAccountsResponse(
-        account=_account_out(account, collecting=account.id in collecting),
-        items=[_account_out(item, collecting=item.id in collecting) for item in items],
+        account=_account_out(account, state=states.get(account.id)),
+        items=[_account_out(item, state=states.get(item.id)) for item in items],
     )
 
 

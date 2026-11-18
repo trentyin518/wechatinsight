@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import JobStatus, SyncJob
@@ -135,9 +135,32 @@ def due_retries(
     return ready
 
 
-def start(session: Session, job: SyncJob) -> None:
-    transition(job, JobStatus.RUNNING)
+def start(session: Session, job: SyncJob) -> bool:
+    """Atomically claim a PENDING/RETRY job (-> RUNNING).
+
+    Returns ``False`` when another process already claimed the job, so the
+    standalone worker and the API's optional in-process drain can run at the
+    same time without ever double-processing (and double-charging) a job.
+    """
+    now = datetime.now(timezone.utc)
+    result = session.execute(
+        update(SyncJob)
+        .where(
+            SyncJob.id == job.id,
+            SyncJob.status.in_([JobStatus.PENDING, JobStatus.RETRY]),
+        )
+        .values(
+            status=JobStatus.RUNNING,
+            started_at=func.coalesce(SyncJob.started_at, now),
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        return False
     session.flush()
+    session.refresh(job)
+    return True
 
 
 def succeed(session: Session, job: SyncJob) -> None:

@@ -28,8 +28,6 @@ async def run_job(
 ) -> str:
     settings = settings or get_settings()
     provider = provider or get_provider(job.provider)
-    jobs_repo.start(session, job)
-    session.flush()
     try:
         if job.job_type == JobType.SYNC_ACCOUNT:
             account = accounts_repo.get_by_id(session, job.target_id) if job.target_id else None
@@ -119,12 +117,20 @@ async def run_pending(
         job = jobs_repo.next_pending(session)
         if job is None:
             break
+        # Atomically claim the job; if another consumer (e.g. the standalone
+        # worker) grabbed it first, this returns False and we move on.
+        if not jobs_repo.start(session, job):
+            session.commit()
+            continue
         await run_job(session, job, provider, settings)
         processed += 1
     # Retries only once their backoff has elapsed; never straight after failing.
     for job in jobs_repo.due_retries(session, limit=max_jobs - processed):
         if _blocked():
             break
+        if not jobs_repo.start(session, job):
+            session.commit()
+            continue
         await run_job(session, job, provider, settings)
         processed += 1
     return processed

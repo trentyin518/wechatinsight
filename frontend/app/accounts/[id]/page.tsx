@@ -80,7 +80,7 @@ export default async function AccountPage({ params, searchParams }: AccountPageP
             {account.wechat_id ? <p className="muted small">微信号：{account.wechat_id}</p> : null}
             {account.description ? <p className="muted">{account.description}</p> : null}
             <div className="meta-row">
-              <DataProvenance provider={account.provider} observedAt={account.last_synced_at} label="最近同步" collecting={account.collecting} />
+              <DataProvenance provider={account.provider} observedAt={account.last_synced_at} label="最近同步" state={account.collection_state} error={account.collection_error} collecting={account.collecting} />
               {account.verification_subject ? <span>认证主体：{account.verification_subject}</span> : null}
               {typeLabel ? <span>账号类型：{typeLabel}</span> : null}
               {account.category ? <span>所属行业：{account.category}</span> : null}
@@ -109,6 +109,11 @@ export default async function AccountPage({ params, searchParams }: AccountPageP
               </div>
             ))}
           </div>
+          {account.last_synced_at && !account.article_count ? (
+            <p className="muted small" style={{ marginTop: 12 }}>
+              该号已在数据源完成采集，但暂无可公开文章，故「发文篇数 / 头条平均*」指标不可用。
+            </p>
+          ) : null}
           {account.estimated_price != null ? (
             <p className="muted small" style={{ marginTop: 12 }}>
               预估广告报价：<b>¥{formatWan(account.estimated_price)} 起</b>

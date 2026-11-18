@@ -97,6 +97,8 @@ export function AccountResultCard({
           <DataProvenance
             provider={account.provider}
             observedAt={account.last_synced_at}
+            state={account.collection_state}
+            error={account.collection_error}
             collecting={account.collecting}
           />
         </div>
