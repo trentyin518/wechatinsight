@@ -22,6 +22,7 @@ export interface AccountOut {
   xigua_index?: number | null;
   is_original?: boolean | null;
   has_video?: boolean | null;
+  collecting?: boolean;
 }
 
 export interface AccountDetail extends AccountOut {

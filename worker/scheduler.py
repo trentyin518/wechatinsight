@@ -166,12 +166,13 @@ async def run_cycle(max_jobs: int = 50) -> dict[str, int]:
             )
         else:
             retry_stats = {"retried": 0, "retry_succeeded": 0}
-        if settings.collection_enabled:
-            processed = await engine.run_pending(
-                session, max_jobs=max_jobs, settings=settings
-            )
-        else:
-            processed = 0
+        # Always drain explicitly-enqueued (on-demand) jobs — even when proactive
+        # collection is off — so user-triggered enrichment actually completes.
+        # `enqueue_due_work` above stays gated by collection_enabled, so no
+        # proactive sweep happens here.
+        processed = await engine.run_pending(
+            session, max_jobs=max_jobs, settings=settings
+        )
         return {"enqueued": enqueued, "processed": processed, **retry_stats}
     finally:
         session.close()

@@ -80,7 +80,7 @@ export default async function AccountPage({ params, searchParams }: AccountPageP
             {account.wechat_id ? <p className="muted small">微信号：{account.wechat_id}</p> : null}
             {account.description ? <p className="muted">{account.description}</p> : null}
             <div className="meta-row">
-              <DataProvenance provider={account.provider} observedAt={account.last_synced_at} label="最近同步" />
+              <DataProvenance provider={account.provider} observedAt={account.last_synced_at} label="最近同步" collecting={account.collecting} />
               {account.verification_subject ? <span>认证主体：{account.verification_subject}</span> : null}
               {typeLabel ? <span>账号类型：{typeLabel}</span> : null}
               {account.category ? <span>所属行业：{account.category}</span> : null}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -17,7 +18,10 @@ from app.repositories import search_cache as search_cache_repo
 from app.repositories import search_retry_queue as search_retry_repo
 from app.repositories import usage as usage_repo
 from app.repositories.accounts import AccountFilters
+from app.services import collection as collection_service
 from app.services.ratelimit import rate_limiter
+
+logger = logging.getLogger("wechat_insight.search")
 
 
 @dataclass(slots=True)
@@ -32,6 +36,24 @@ def _has_filters(filters: AccountFilters | None) -> bool:
     if filters is None:
         return False
     return any(getattr(filters, field) is not None for field in filters.__dataclass_fields__)
+
+
+def _enqueue_visible_page(
+    session: Session,
+    items: list[WechatAccount],
+    settings: Settings,
+) -> None:
+    """Schedule enrichment only for accounts rendered on this result page."""
+    if not items or not settings.on_demand_sync_enabled:
+        return
+    try:
+        # Savepoint so a scheduling hiccup rolls back only the new jobs and
+        # never discards the accounts/cache work done earlier in this request.
+        with session.begin_nested():
+            collection_service.enqueue_accounts_for_sync(session, items, settings=settings)
+    except Exception:
+        # Enrichment is best-effort and must never make a search fail.
+        logger.exception("failed to enqueue on-demand account enrichment")
 
 
 async def search_accounts(
@@ -54,9 +76,14 @@ async def search_accounts(
     settings = settings or get_settings()
     items, total = accounts_repo.search_local(session, keyword, page, page_size, filters)
     if total > 0 or not (keyword or "").strip():
+        # Local hit (or a filter-only browse): these are real, already-known
+        # accounts. Enrich just the page the user is looking at — page 2 of a
+        # search enriches page 2's accounts, not everything at once.
+        _enqueue_visible_page(session, items, settings)
         return SearchResult(items=items, total=total)
 
     if not settings.allow_cold_start_search:
+        _enqueue_visible_page(session, items, settings)
         return SearchResult(items=items, total=total)
 
     provider_name = getattr(provider, "name", None) or settings.default_provider
@@ -72,6 +99,7 @@ async def search_accounts(
             empty_ttl_hours=settings.empty_search_cache_ttl_hours,
         ):
             cached_items, cached_total = _items_from_ids(session, cached.account_ids, page, page_size)
+            _enqueue_visible_page(session, cached_items, settings)
             return SearchResult(items=cached_items, total=cached_total)
 
     # Controlled realtime lookup: rate limit + budget, then a single provider call.
@@ -100,6 +128,7 @@ async def search_accounts(
                 cached_items, cached_total = _items_from_ids(
                     session, stale.account_ids, page, page_size
                 )
+                _enqueue_visible_page(session, cached_items, settings)
                 return SearchResult(items=cached_items, total=cached_total, degraded=True)
             # On "busy", queue a durable background retry so the next search can
             # be answered from the local store once the upstream recovers.
@@ -115,6 +144,7 @@ async def search_accounts(
                 except Exception:  # queueing must never mask the real error
                     session.rollback()
         if total > 0:
+            _enqueue_visible_page(session, items, settings)
             return SearchResult(items=items, total=total, degraded=True)
         raise
 
@@ -134,6 +164,7 @@ async def search_accounts(
     )
 
     items, total = accounts_repo.search_local(session, keyword, page, page_size, filters)
+    _enqueue_visible_page(session, items, settings)
     return SearchResult(items=items, total=total)
 
 

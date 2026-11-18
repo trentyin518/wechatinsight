@@ -31,6 +31,9 @@ class AccountOut(ORMModel):
     xigua_index: float | None = None
     is_original: bool | None = None
     has_video: bool | None = None
+    # True while a background demand-driven collection job is queued/running for
+    # this account (so the UI can show "采集中…" instead of a static "暂不可用").
+    collecting: bool = False
 
 
 class AccountDetail(ORMModel):
@@ -59,6 +62,7 @@ class AccountDetail(ORMModel):
     xigua_index: float | None = None
     is_original: bool | None = None
     has_video: bool | None = None
+    collecting: bool = False
 
 
 class AccountSearchResponse(ORMModel):

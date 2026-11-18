@@ -8,7 +8,14 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models import ProviderAccountMapping, WechatAccount, WechatArticle
+from app.db.models import (
+    JobStatus,
+    JobType,
+    ProviderAccountMapping,
+    SyncJob,
+    WechatAccount,
+    WechatArticle,
+)
 from app.providers.base import ProviderAccount
 
 
@@ -39,6 +46,42 @@ class AccountFilters:
 
 def get_by_id(session: Session, account_id: int) -> WechatAccount | None:
     return session.get(WechatAccount, account_id)
+
+
+def ids_with_pending_collection(session: Session, account_ids: list[int]) -> set[int]:
+    """Subset of ``account_ids`` with an in-flight demand-driven collection job.
+
+    Counts both the article-sync phase (job targets the account) and the
+    metrics phase (job targets one of the account's articles), so the UI can
+    show "采集中…" until the enrichment settles.
+    """
+    if not account_ids:
+        return set()
+    active = (JobStatus.PENDING, JobStatus.RUNNING, JobStatus.RETRY)
+
+    pending: set[int] = set(
+        session.scalars(
+            select(SyncJob.target_id).where(
+                SyncJob.job_type == JobType.SYNC_ARTICLES,
+                SyncJob.target_type == "account",
+                SyncJob.target_id.in_(account_ids),
+                SyncJob.status.in_(active),
+            )
+        )
+    )
+    metrics_accounts: set[int] = set(
+        session.scalars(
+            select(WechatArticle.account_id)
+            .join(SyncJob, SyncJob.target_id == WechatArticle.id)
+            .where(
+                SyncJob.job_type == JobType.SYNC_METRICS,
+                SyncJob.target_type == "article",
+                SyncJob.status.in_(active),
+                WechatArticle.account_id.in_(account_ids),
+            )
+        )
+    )
+    return pending | metrics_accounts
 
 
 def similar_accounts(

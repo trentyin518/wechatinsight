@@ -94,7 +94,11 @@ export function AccountResultCard({
         </div>
 
         <div className="acct-provenance">
-          <DataProvenance provider={account.provider} observedAt={account.last_synced_at} />
+          <DataProvenance
+            provider={account.provider}
+            observedAt={account.last_synced_at}
+            collecting={account.collecting}
+          />
         </div>
       </div>
 

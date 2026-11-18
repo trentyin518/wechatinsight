@@ -23,7 +23,7 @@ from app.services import articles as articles_service
 router = APIRouter(tags=["accounts"])
 
 
-def _account_out(account: WechatAccount) -> AccountOut:
+def _account_out(account: WechatAccount, *, collecting: bool = False) -> AccountOut:
     return AccountOut(
         id=account.id,
         name=account.name,
@@ -48,10 +48,11 @@ def _account_out(account: WechatAccount) -> AccountOut:
         xigua_index=account.xigua_index,
         is_original=account.is_original,
         has_video=account.has_video,
+        collecting=collecting,
     )
 
 
-def _account_detail(account: WechatAccount) -> AccountDetail:
+def _account_detail(account: WechatAccount, *, collecting: bool = False) -> AccountDetail:
     return AccountDetail(
         id=account.id,
         name=account.name,
@@ -78,6 +79,7 @@ def _account_detail(account: WechatAccount) -> AccountDetail:
         xigua_index=account.xigua_index,
         is_original=account.is_original,
         has_video=account.has_video,
+        collecting=collecting,
     )
 
 
@@ -143,8 +145,11 @@ async def search_accounts(
         session, q, page, page_size, filters=filters, mode=mode
     )
     session.commit()
+    collecting = accounts_repo.ids_with_pending_collection(
+        session, [a.id for a in result.items]
+    )
     return AccountSearchResponse(
-        items=[_account_out(a) for a in result.items],
+        items=[_account_out(a, collecting=a.id in collecting) for a in result.items],
         page=page,
         page_size=page_size,
         total=result.total,
@@ -160,7 +165,8 @@ def get_account(
     account = accounts_service.get_account(session, account_id)
     if account is None:
         raise NotFoundError("公众号不存在。")
-    return _account_detail(account)
+    collecting = accounts_repo.ids_with_pending_collection(session, [account.id])
+    return _account_detail(account, collecting=account.id in collecting)
 
 
 @router.get("/accounts/{account_id}/similar", response_model=SimilarAccountsResponse)
@@ -174,9 +180,12 @@ def get_similar_accounts(
     if account is None:
         raise NotFoundError("公众号不存在。")
     items = accounts_repo.similar_accounts(session, account, limit=limit)
+    collecting = accounts_repo.ids_with_pending_collection(
+        session, [account.id, *(item.id for item in items)]
+    )
     return SimilarAccountsResponse(
-        account=_account_out(account),
-        items=[_account_out(item) for item in items],
+        account=_account_out(account, collecting=account.id in collecting),
+        items=[_account_out(item, collecting=item.id in collecting) for item in items],
     )
 
 

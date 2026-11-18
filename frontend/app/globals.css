@@ -240,6 +240,28 @@ a.card:hover {
   color: var(--muted);
 }
 
+.provenance-collecting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-strong);
+  font-weight: 500;
+}
+
+.provenance-collecting::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  animation: provenance-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes provenance-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
 .badge {
   background: rgba(37, 99, 235, 0.1);
   color: var(--accent-strong);

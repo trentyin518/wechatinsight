@@ -107,7 +107,7 @@ export default async function HomePage() {
                 {account.description ? (
                   <p className="muted small">{account.description}</p>
                 ) : null}
-                <DataProvenance provider={account.provider} observedAt={account.last_synced_at} />
+                <DataProvenance provider={account.provider} observedAt={account.last_synced_at} collecting={account.collecting} />
               </Link>
             ))}
           </div>

@@ -21,8 +21,12 @@ logger = logging.getLogger("wechat_insight.worker")
 
 
 async def run_job(
-    session: Session, job: SyncJob, provider: WeChatProvider | None = None
+    session: Session,
+    job: SyncJob,
+    provider: WeChatProvider | None = None,
+    settings: Settings | None = None,
 ) -> str:
+    settings = settings or get_settings()
     provider = provider or get_provider(job.provider)
     jobs_repo.start(session, job)
     session.flush()
@@ -36,7 +40,13 @@ async def run_job(
             account = accounts_repo.get_by_id(session, job.target_id) if job.target_id else None
             if account is None:
                 raise ProviderError("目标账号不存在。")
-            await sync_articles.sync_articles(session, job, account, provider)
+            await sync_articles.sync_articles(
+                session,
+                job,
+                account,
+                provider,
+                settings=settings,
+            )
         elif job.job_type == JobType.SYNC_METRICS:
             article = articles_repo.get_by_id(session, job.target_id) if job.target_id else None
             if article is None:
@@ -109,12 +119,12 @@ async def run_pending(
         job = jobs_repo.next_pending(session)
         if job is None:
             break
-        await run_job(session, job, provider)
+        await run_job(session, job, provider, settings)
         processed += 1
     # Retries only once their backoff has elapsed; never straight after failing.
     for job in jobs_repo.due_retries(session, limit=max_jobs - processed):
         if _blocked():
             break
-        await run_job(session, job, provider)
+        await run_job(session, job, provider, settings)
         processed += 1
     return processed

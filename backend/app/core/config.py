@@ -74,6 +74,26 @@ class Settings:
     # this window (kills the "every 4s per article" cost storm).
     metrics_min_interval_hours: int = 24
 
+    # Demand-driven enrichment: when a user's *search* returns accounts on the
+    # visible result page, those accounts (and only those) get a single
+    # background SYNC_ARTICLES job. It persists the first page of articles and
+    # chains a bounded number of SYNC_METRICS jobs, so the console can show real
+    # 发文篇数 / 头条平均* values. Nothing is scheduled on a timer and nothing
+    # outside the page the user is viewing is fetched, keeping spend proportional
+    # to actual searches. Set ON_DEMAND_SYNC_ENABLED=false to go back to
+    # profile-only (no paid enrichment).
+    on_demand_sync_enabled: bool = True
+    # Don't re-sync an account that was already collected within this window, so
+    # repeated identical searches (and pagination round-trips) never pay twice.
+    on_demand_sync_ttl_hours: int = 12
+    # Only pull the first page of an account's articles on a demand sync — never
+    # page through the whole history in one go.
+    article_sync_max_pages: int = 1
+    # Cap paid per-article metric calls per account per demand sync (0 disables
+    # metrics entirely). Averages are computed over at most this many latest
+    # articles, which keeps the cost per viewed account bounded.
+    metrics_per_account_limit: int = 10
+
     # Authentication & onboarding. AUTH_ENFORCED gates whether data endpoints
     # require an approved session; it defaults to False so the endpoints and UI
     # can ship first, then be switched on (and rolled back) without a migration.
@@ -132,6 +152,10 @@ def get_settings() -> Settings:
         search_retry_enabled=_bool(os.getenv("SEARCH_RETRY_ENABLED"), False),
         collection_enabled=_bool(os.getenv("COLLECTION_ENABLED"), False),
         metrics_min_interval_hours=_int(os.getenv("METRICS_MIN_INTERVAL_HOURS"), 24),
+        on_demand_sync_enabled=_bool(os.getenv("ON_DEMAND_SYNC_ENABLED"), True),
+        on_demand_sync_ttl_hours=_int(os.getenv("ON_DEMAND_SYNC_TTL_HOURS"), 12),
+        article_sync_max_pages=_int(os.getenv("ARTICLE_SYNC_MAX_PAGES"), 1),
+        metrics_per_account_limit=_int(os.getenv("METRICS_PER_ACCOUNT_LIMIT"), 10),
         auth_enforced=_bool(os.getenv("AUTH_ENFORCED"), False),
         session_ttl_hours=_int(os.getenv("SESSION_TTL_HOURS"), 168),
         session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "wi_session"),
