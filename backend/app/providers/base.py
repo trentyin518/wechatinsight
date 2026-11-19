@@ -54,6 +54,7 @@ class ProviderArticle:
     cover_url: str | None = None
     summary: str | None = None
     author: str | None = None
+    author_avatar_url: str | None = None
     ip_region: str | None = None
     is_original: bool | None = None
     is_paid: bool | None = None

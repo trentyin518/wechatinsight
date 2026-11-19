@@ -98,6 +98,12 @@ class Settings:
     # intra-account calls can run in parallel without thrashing the account row.
     # Bounded to respect the provider's rate limit (tune to qovia's real limit).
     metrics_concurrency: int = 6
+    # Live content search via qovia ``/v1/search`` — used as a fallback so a
+    # keyword that matches articles (but no account) still returns results
+    # instead of an empty page. Cached briefly to avoid repeat paid calls.
+    content_search_live_enabled: bool = True
+    content_search_page_size: int = 20
+    content_search_cache_ttl_seconds: int = 600
     # The standalone worker is the primary consumer of demand jobs. When it is
     # not running (e.g. local dev that only starts the API), the API drains a
     # bounded batch after responding to a search/detail request so the feature
@@ -173,6 +179,11 @@ def get_settings() -> Settings:
         article_sync_max_pages=_int(os.getenv("ARTICLE_SYNC_MAX_PAGES"), 1),
         metrics_per_account_limit=_int(os.getenv("METRICS_PER_ACCOUNT_LIMIT"), 10),
         metrics_concurrency=_int(os.getenv("METRICS_CONCURRENCY"), 6),
+        content_search_live_enabled=_bool(os.getenv("CONTENT_SEARCH_LIVE_ENABLED"), True),
+        content_search_page_size=_int(os.getenv("CONTENT_SEARCH_PAGE_SIZE"), 20),
+        content_search_cache_ttl_seconds=_int(
+            os.getenv("CONTENT_SEARCH_CACHE_TTL_SECONDS"), 600
+        ),
         on_demand_inline_drain_max_jobs=_int(
             os.getenv("ON_DEMAND_INLINE_DRAIN_MAX_JOBS"), 60
         ),

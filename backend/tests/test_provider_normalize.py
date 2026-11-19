@@ -189,3 +189,45 @@ async def test_auth_error_does_not_leak():
         await provider.search_accounts("科技")
     assert excinfo.value.code == "DATA_SOURCE_AUTH"
     assert "secret" not in str(excinfo.value)
+
+
+async def test_search_content_maps_v1_search():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path.endswith("/v1/search")
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "items": [
+                        {
+                            "id": "soc_wec_1",
+                            "platform": "wechat",
+                            "title": "重要“新”岗位！",
+                            "url": "https://mp.weixin.qq.com/s?__biz=X",
+                            "published_at": "2026-11-19T22:28:04+08:00",
+                            "type": "original",
+                            "ip_location": "广东",
+                            "text": "来源 | 阳江日报",
+                            "author": {"name": "学习与文摘", "avatar": "https://a.jpg"},
+                        },
+                        {  # non-wechat platform is ignored
+                            "platform": "weibo",
+                            "url": "https://weibo.com/x",
+                            "title": "忽略",
+                        },
+                    ]
+                }
+            },
+        )
+
+    provider = _provider(handler)
+    items = await provider.search_content("阳江日报")
+    assert len(items) == 1
+    item = items[0]
+    assert item.title == "重要“新”岗位！"
+    assert item.author == "学习与文摘"
+    assert item.author_avatar_url == "https://a.jpg"
+    assert item.ip_region == "广东"
+    assert item.is_original is True
+    assert item.url.startswith("https://mp.weixin.qq.com/")

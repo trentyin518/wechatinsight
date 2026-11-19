@@ -90,6 +90,7 @@ def _clean_text(value: Any) -> str | None:
 class QoviaProvider:
     name = "qovia"
     supports_metrics = True
+    supports_content_search = True
 
     def __init__(
         self,
@@ -137,7 +138,14 @@ class QoviaProvider:
             except Exception:  # pragma: no cover - shutdown best-effort
                 pass
 
-    async def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         headers = {"Accept": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
@@ -147,7 +155,9 @@ class QoviaProvider:
         client = self._client if self._client is not None else self._shared_client()
         for attempt in range(self._max_retries + 1):
             try:
-                response = await client.get(url, params=params, headers=headers)
+                response = await client.request(
+                    method, url, params=params, json=json_body, headers=headers
+                )
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 if attempt < self._max_retries:
                     await asyncio.sleep(self._backoff * (2**attempt))
@@ -180,6 +190,9 @@ class QoviaProvider:
                 raise DataSourceBusy() if busy else DataSourceUnavailable()
             raise ProviderError("数据源请求被拒绝。", code="DATA_SOURCE_BAD_REQUEST")
         raise DataSourceUnavailable()
+
+    async def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("GET", path, params=params)
 
     # --- mapping ---------------------------------------------------------
     def _map_account(self, item: dict[str, Any]) -> ProviderAccount:
@@ -237,6 +250,49 @@ class QoviaProvider:
     async def get_account(self, provider_account_id: str) -> ProviderAccount | None:
         # No account-profile endpoint; existing profile data is left untouched.
         return None
+
+    async def search_content(self, query: str, page_size: int = 20) -> list[ProviderArticle]:
+        """Live content search across WeChat articles via ``POST /v1/search``.
+
+        Returns articles (with author name/avatar) even when no account matches
+        the keyword — the account-search endpoint is empty for content keywords.
+        """
+        payload = await self._request("POST", "/v1/search", json_body={"query": query})
+        data = payload.get("data") or {}
+        out: list[ProviderArticle] = []
+        for item in data.get("items") or []:
+            platform = str(item.get("platform") or "wechat").lower()
+            if platform != "wechat":
+                continue
+            url = str(item.get("url") or "")
+            if not url:
+                continue
+            author = item.get("author") or {}
+            author = author if isinstance(author, dict) else {}
+            item_type = item.get("type")
+            out.append(
+                ProviderArticle(
+                    provider=self.name,
+                    provider_article_id=(
+                        str(item["id"]) if item.get("id") is not None else None
+                    ),
+                    title=_clean_text(item.get("title")) or "",
+                    url=url,
+                    published_at=_parse_dt(item.get("published_at")),
+                    summary=_clean_text(item.get("text")) or _clean_text(item.get("summary")),
+                    author=_clean_text(author.get("name")),
+                    author_avatar_url=author.get("avatar"),
+                    ip_region=item.get("ip_location"),
+                    is_original=(
+                        str(item_type).lower() == "original"
+                        if item_type is not None
+                        else None
+                    ),
+                )
+            )
+            if len(out) >= page_size:
+                break
+        return out
 
     async def get_articles(
         self,

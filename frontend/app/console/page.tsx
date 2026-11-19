@@ -86,6 +86,26 @@ async function AccountResults({ cq, selectedIds }: { cq: ConsoleQuery; selectedI
   }
 
   if (data.items.length === 0) {
+    // Don't dead-end on account search. When a keyword matches content rather
+    // than an account, fall back to live article results so the page isn't empty.
+    const keyword = (cq.q ?? "").trim();
+    if (keyword) {
+      try {
+        const related = await searchArticles(consoleQueryToArticleApiParams(cq));
+        if (related.items.length > 0) {
+          return (
+            <section className="art-results">
+              <div className="console-hint">
+                未找到匹配的公众号，但找到 {related.total} 篇相关内容（实时检索结果）。
+              </div>
+              <ArticleTable items={related.items} />
+            </section>
+          );
+        }
+      } catch {
+        // fall through to the empty state on any live-search failure
+      }
+    }
     return (
       <StateMessage
         title="没有符合条件的公众号"
@@ -151,6 +171,11 @@ async function ArticleResultsSection({ cq }: { cq: ConsoleQuery }) {
   return (
     <section className="art-results">
       <ArticleToolbar initial={cq} total={data.total} />
+      {data.source === "live" ? (
+        <div className="console-hint">
+          本地暂未收录该关键词的文章，以下为实时内容检索结果（未收录，点击标题查看原文）。
+        </div>
+      ) : null}
       <ArticleTable items={data.items} />
       <Pagination
         page={data.page}

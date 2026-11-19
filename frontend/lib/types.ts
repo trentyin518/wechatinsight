@@ -89,6 +89,7 @@ export interface ArticleSearchItem {
   wow_count: number | null;
   comment_count: number | null;
   metrics_observed_at: string | null;
+  external?: boolean;
 }
 
 export interface ArticleSearchResponse {
@@ -96,6 +97,7 @@ export interface ArticleSearchResponse {
   page: number;
   page_size: number;
   total: number;
+  source?: "local" | "live";
 }
 
 export interface MetricPoint {

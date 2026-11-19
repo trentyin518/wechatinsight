@@ -39,19 +39,33 @@ export function ArticleTable({ items }: { items: ArticleSearchItem[] }) {
         <tbody>
           {items.map((item) => {
             const initial = (item.account_name || "号").trim().slice(0, 1) || "号";
+            const external = item.external === true;
             return (
               <tr key={item.id}>
                 <td className="art-col-info">
                   <div className="art-tags">
-                    {item.is_original ? (
+                    {external ? (
+                      <span className="tag tag-gray">实时·未收录</span>
+                    ) : item.is_original ? (
                       <span className="tag tag-green">原创</span>
                     ) : (
                       <span className="tag tag-gray">非原创</span>
                     )}
                   </div>
-                  <Link className="art-title" href={`/articles/${item.id}`}>
-                    {item.title}
-                  </Link>
+                  {external ? (
+                    <a
+                      className="art-title"
+                      href={item.article_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {item.title}
+                    </a>
+                  ) : (
+                    <Link className="art-title" href={`/articles/${item.id}`}>
+                      {item.title}
+                    </Link>
+                  )}
                   <div className="art-sub">
                     <span className="art-avatar">{initial}</span>
                     <span className="art-account">{item.account_name}</span>

@@ -50,6 +50,8 @@ class ArticleSearchItem(ORMModel):
     wow_count: int | None = None
     comment_count: int | None = None
     metrics_observed_at: datetime | None = None
+    # True for live (uncollected) external results — the UI links to the source.
+    external: bool = False
 
 
 class ArticleSearchResponse(ORMModel):
@@ -57,6 +59,8 @@ class ArticleSearchResponse(ORMModel):
     page: int
     page_size: int
     total: int
+    # "local" = collected articles; "live" = realtime content search fallback.
+    source: str = "local"
 
 
 class MetricPoint(ORMModel):

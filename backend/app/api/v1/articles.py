@@ -36,7 +36,7 @@ def _metric_point(metric: ArticleMetric) -> MetricPoint:
 
 
 @router.get("/articles", response_model=ArticleSearchResponse)
-def search_articles(
+async def search_articles(
     q: str = Query("", description="关键词"),
     scope: str = Query("title", pattern="^(title|title_content|topic|comment)$"),
     category: str | None = Query(None, description="所属行业"),
@@ -88,7 +88,41 @@ def search_articles(
                 metrics_observed_at=metric.observed_at if metric else None,
             )
         )
-    return ArticleSearchResponse(items=items, page=page, page_size=page_size, total=total)
+
+    # No collected articles matched: fall back to live content search so a
+    # keyword that matches articles (but nothing we've collected) isn't empty.
+    source = "local"
+    if not items and q.strip():
+        external = await articles_service.search_external_articles(session, q)
+        if external:
+            items = [
+                ArticleSearchItem(
+                    id=-(idx + 1),  # negative id signals "external / not stored"
+                    title=p.title,
+                    article_url=p.url,
+                    provider=p.provider,
+                    published_at=p.published_at,
+                    is_original=p.is_original,
+                    author=p.author,
+                    ip_region=p.ip_region,
+                    summary=p.summary,
+                    account_id=0,
+                    account_name=p.author or "—",
+                    account_avatar_url=p.author_avatar_url,
+                    external=True,
+                )
+                for idx, p in enumerate(external)
+            ]
+            total = len(items)
+            source = "live"
+
+    return ArticleSearchResponse(
+        items=items,
+        page=page if source == "local" else 1,
+        page_size=page_size,
+        total=total,
+        source=source,
+    )
 
 
 @router.get("/articles/{article_id}", response_model=ArticleDetail)
