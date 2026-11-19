@@ -2,7 +2,9 @@ import Link from "next/link";
 
 import { DataProvenance } from "@/components/DataProvenance";
 import { Pagination } from "@/components/Pagination";
+import { CollectingAutoRefresh } from "@/components/console/CollectingAutoRefresh";
 import { SelectionButton } from "@/components/console/SelectionButton";
+import { RecollectButton } from "@/components/console/RecollectButton";
 import { StateMessage } from "@/components/StateMessage";
 import {
   ApiError,
@@ -66,6 +68,7 @@ export default async function AccountPage({ params, searchParams }: AccountPageP
 
     return (
       <>
+        <CollectingAutoRefresh active={Boolean(account.collecting)} />
         <div className="breadcrumb">
           <Link href="/console">控制台</Link> /{" "}
           <Link href={`/console?q=${encodeURIComponent(account.name)}`}>搜索</Link> / {account.name}
@@ -90,6 +93,7 @@ export default async function AccountPage({ params, searchParams }: AccountPageP
             </div>
             <div className="profile-actions">
               <SelectionButton accountId={account.id} initialSelected={selectedIds.has(account.id)} />
+              <RecollectButton accountId={account.id} />
               <Link className="btn" href={`/console/similar?account=${account.id}`}>
                 查看相似号
               </Link>

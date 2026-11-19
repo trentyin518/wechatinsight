@@ -1,6 +1,7 @@
 import { AccountResultCard } from "@/components/console/AccountResultCard";
 import { ArticleTable } from "@/components/console/ArticleTable";
 import { ArticleToolbar } from "@/components/console/ArticleToolbar";
+import { CollectingAutoRefresh } from "@/components/console/CollectingAutoRefresh";
 import { SearchFilters } from "@/components/console/SearchFilters";
 import { Pagination } from "@/components/Pagination";
 import { StateMessage } from "@/components/StateMessage";
@@ -95,6 +96,7 @@ async function AccountResults({ cq, selectedIds }: { cq: ConsoleQuery; selectedI
 
   return (
     <section className="console-results">
+      <CollectingAutoRefresh active={data.items.some((account) => account.collecting)} />
       <div className="result-bar">
         <span className="result-count">
           找到 <b>{data.total}</b> 个公众号

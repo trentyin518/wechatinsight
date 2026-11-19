@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from pydantic import BaseModel
+
 from app.schemas.common import ORMModel
 
 
@@ -84,3 +86,11 @@ class AccountSearchResponse(ORMModel):
 class SimilarAccountsResponse(ORMModel):
     account: AccountOut
     items: list[AccountOut]
+
+
+class RecollectResult(BaseModel):
+    """Response for a manual per-account re-collection trigger."""
+
+    queued: bool
+    job_id: int | None
+    message: str

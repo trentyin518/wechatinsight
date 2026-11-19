@@ -288,8 +288,11 @@ export interface SyncHealth {
   pending_count: number;
   pending_oldest_at: string | null;
   pending_oldest_age_seconds: number | null;
+  metrics_pending: number;
+  metrics_throttle_threshold: number;
   failed_reasons: SyncFailureReason[];
   recent_failed: SyncFailedJob[];
+  by_type: JobTypeBreakdown[];
   success_24h: number;
   failed_24h: number;
   worker_hint: string | null;
@@ -298,6 +301,20 @@ export interface SyncHealth {
 export interface SyncDrainResult {
   scheduled: boolean;
   pending: number;
+  metrics_pending: number;
   max_jobs: number;
+  throttled: boolean;
   message: string;
+}
+
+export interface RecollectResult {
+  queued: boolean;
+  job_id: number | null;
+  message: string;
+}
+
+export interface JobTypeBreakdown {
+  job_type: string;
+  total: number;
+  status_counts: Record<string, number>;
 }

@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_admin
 from app.core.config import get_settings
-from app.db.models import ApiUsageLog, JobStatus, SyncJob, User
+from app.db.models import ApiUsageLog, JobStatus, JobType, SyncJob, User
 from app.providers.registry import get_provider
 from app.repositories import usage as usage_repo
 from app.schemas.admin import (
+    JobTypeBreakdown,
     SyncDrainResult,
     SyncFailedJob,
     SyncFailureReason,
@@ -108,6 +109,24 @@ def sync_health(
     status_counts = {status: int(count) for status, count in status_rows}
     total_jobs = sum(status_counts.values())
 
+    type_rows = session.execute(
+        select(SyncJob.job_type, SyncJob.status, func.count(SyncJob.id))
+        .group_by(SyncJob.job_type, SyncJob.status)
+    ).all()
+    type_map: dict[str, dict[str, int]] = {}
+    for job_type, status, count in type_rows:
+        type_map.setdefault(job_type, {})[status] = int(count)
+    by_type = [
+        JobTypeBreakdown(
+            job_type=jt,
+            total=sum(sc.values()),
+            status_counts=sc,
+        )
+        for jt, sc in sorted(type_map.items())
+    ]
+    metrics_pending = type_map.get(JobType.SYNC_METRICS, {}).get(JobStatus.PENDING, 0)
+
+    settings = get_settings()
     pending_count = status_counts.get(JobStatus.PENDING, 0)
     oldest_pending = session.scalar(
         select(func.min(SyncJob.created_at)).where(SyncJob.status == JobStatus.PENDING)
@@ -173,8 +192,11 @@ def sync_health(
         pending_count=pending_count,
         pending_oldest_at=oldest_pending,
         pending_oldest_age_seconds=pending_age,
+        metrics_pending=metrics_pending,
+        metrics_throttle_threshold=settings.metrics_backlog_threshold,
         failed_reasons=failed_reasons,
         recent_failed=recent_failed,
+        by_type=by_type,
         success_24h=int(success_24h or 0),
         failed_24h=int(failed_24h or 0),
         worker_hint=worker_hint,
@@ -184,15 +206,23 @@ def sync_health(
 @router.post("/sync/drain", response_model=SyncDrainResult)
 async def trigger_sync_drain(
     background: BackgroundTasks,
-    max_jobs: int = Query(200, ge=1, le=2000, description="最多消费的任务数"),
+    max_jobs: int | None = Query(
+        None,
+        ge=1,
+        le=2000,
+        description="最多消费的任务数；不传则自动（指标积压高时自动节流）",
+    ),
     _admin: User = Depends(require_admin),
     session: Session = Depends(get_db),
 ) -> SyncDrainResult:
     """Admin: kick off a bounded background drain of the PENDING backlog.
 
     Runs after the response is sent and claims jobs atomically, so it is safe to
-    fire alongside a running worker. Cost is bounded by ``max_jobs`` and the
-    normal budget guard inside ``run_pending``.
+    fire alongside a running worker. When no explicit ``max_jobs`` is given and
+    the metrics queue is backed up past ``metrics_backlog_threshold``, the batch
+    is auto-throttled to ``metrics_backlog_throttled_max_jobs`` so one click
+    can't trigger a large charge. Final cost is still capped by the budget guard
+    inside ``run_pending``.
     """
     settings = get_settings()
     pending = int(
@@ -201,16 +231,52 @@ async def trigger_sync_drain(
         )
         or 0
     )
+    metrics_pending = int(
+        session.scalar(
+            select(func.count(SyncJob.id)).where(
+                SyncJob.status == JobStatus.PENDING,
+                SyncJob.job_type == JobType.SYNC_METRICS,
+            )
+        )
+        or 0
+    )
     if pending <= 0:
         return SyncDrainResult(
-            scheduled=False, pending=0, max_jobs=max_jobs, message="没有排队任务。"
+            scheduled=False,
+            pending=0,
+            metrics_pending=metrics_pending,
+            max_jobs=0,
+            throttled=False,
+            message="没有排队任务。",
         )
 
-    cap = min(max_jobs, pending)
+    throttled = False
+    if max_jobs is None:
+        requested = 200
+        throttle_cap = settings.metrics_backlog_throttled_max_jobs
+        if (
+            throttle_cap > 0
+            and metrics_pending >= settings.metrics_backlog_threshold
+            and throttle_cap < requested
+        ):
+            requested = throttle_cap
+            throttled = True
+    else:
+        requested = max_jobs
+
+    cap = min(requested, pending)
     background.add_task(drain_demand_jobs, settings, cap)
+    if throttled:
+        message = (
+            f"指标积压 {metrics_pending} 个，已自动节流：本次最多处理 {cap} 个任务以控制费用。"
+        )
+    else:
+        message = f"已在后台开始消费，最多处理 {cap} 个任务（每个调用约 $0.005）。"
     return SyncDrainResult(
         scheduled=True,
         pending=pending,
+        metrics_pending=metrics_pending,
         max_jobs=cap,
-        message=f"已在后台开始消费，最多处理 {cap} 个任务（每个调用约 $0.005）。",
+        throttled=throttled,
+        message=message,
     )

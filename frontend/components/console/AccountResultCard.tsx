@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DataProvenance } from "@/components/DataProvenance";
+import { RecollectButton } from "@/components/console/RecollectButton";
 import { SelectionButton } from "@/components/console/SelectionButton";
 import type { AccountOut } from "@/lib/types";
 
@@ -120,6 +121,7 @@ export function AccountResultCard({
           查看相似号
         </Link>
         <SelectionButton accountId={account.id} initialSelected={initialSelected} />
+        <RecollectButton accountId={account.id} />
       </aside>
     </article>
   );

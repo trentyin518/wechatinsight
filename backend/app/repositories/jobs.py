@@ -79,6 +79,7 @@ def next_pending(
     session: Session,
     job_type: str | None = None,
     *,
+    exclude_types: set[str] | None = None,
     exclude_priorities: set[str] | None = None,
 ) -> SyncJob | None:
     """Pick the highest-priority PENDING job (A before B before C).
@@ -89,6 +90,8 @@ def next_pending(
     stmt = select(SyncJob).where(SyncJob.status == JobStatus.PENDING)
     if job_type is not None:
         stmt = stmt.where(SyncJob.job_type == job_type)
+    if exclude_types:
+        stmt = stmt.where(SyncJob.job_type.notin_(exclude_types))
     if exclude_priorities:
         stmt = stmt.where(SyncJob.priority.notin_(exclude_priorities))
     stmt = stmt.order_by(SyncJob.priority.asc(), SyncJob.id.asc()).limit(1)

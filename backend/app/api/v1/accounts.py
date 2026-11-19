@@ -15,11 +15,13 @@ from app.schemas.accounts import (
     AccountDetail,
     AccountOut,
     AccountSearchResponse,
+    RecollectResult,
     SimilarAccountsResponse,
 )
 from app.schemas.articles import ArticleListItem, ArticleListResponse
 from app.services import accounts as accounts_service
 from app.services import articles as articles_service
+from app.services import collection as collection_service
 from app.services.demand_drain import drain_demand_jobs
 
 router = APIRouter(tags=["accounts"])
@@ -182,6 +184,38 @@ def get_account(
         # standalone worker isn't running.
         background.add_task(drain_demand_jobs, get_settings())
     return _account_detail(account, state=state)
+
+
+@router.post("/accounts/{account_id}/recollect", response_model=RecollectResult)
+def recollect_account(
+    account_id: int,
+    background: BackgroundTasks,
+    session: Session = Depends(get_db),
+    _user: User | None = Depends(require_approved),
+) -> RecollectResult:
+    """Force a fresh article sync for one account (console "重新采集" button).
+
+    Bypasses the on-demand TTL/cooldown so an operator can refresh a specific
+    account on demand, but skips when an identical job is already in-flight.
+    Kicks a bounded background drain so it processes without a worker running.
+    """
+    account = accounts_service.get_account(session, account_id)
+    if account is None:
+        raise NotFoundError("公众号不存在。")
+    if accounts_repo.get_provider_account_id(session, account) is None:
+        return RecollectResult(
+            queued=False, job_id=None, message="缺少供应商账号映射，无法采集。"
+        )
+    job_id = collection_service.force_enqueue_articles(session, account)
+    session.commit()
+    if job_id is None:
+        return RecollectResult(
+            queued=False, job_id=None, message="该账号已在采集中，稍后刷新查看。"
+        )
+    background.add_task(drain_demand_jobs, get_settings())
+    return RecollectResult(
+        queued=True, job_id=job_id, message="已加入采集队列，稍后刷新查看最新数据。"
+    )
 
 
 @router.get("/accounts/{account_id}/similar", response_model=SimilarAccountsResponse)

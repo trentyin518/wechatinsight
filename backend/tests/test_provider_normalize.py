@@ -148,6 +148,15 @@ async def test_metrics_not_found_returns_none():
     assert await provider.get_article_metrics("https://mp.weixin.qq.com/s?__biz=X") is None
 
 
+async def test_persistent_client_is_reused_and_closed():
+    provider = QoviaProvider(api_key="secret-key", base_url="https://api.test")
+    first = provider._shared_client()
+    second = provider._shared_client()
+    assert first is second  # same loop -> reused, connections kept alive
+    await provider.aclose()
+    assert provider._clients_by_loop == {}
+
+
 async def test_timeout_raises_standardized_error():
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectTimeout("timed out")

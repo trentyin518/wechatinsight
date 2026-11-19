@@ -49,6 +49,14 @@ class SyncFailedJob(BaseModel):
     updated_at: datetime
 
 
+class JobTypeBreakdown(BaseModel):
+    """Per-task-type status counts (文章同步 vs 指标获取 vs 账号同步)."""
+
+    job_type: str
+    total: int
+    status_counts: dict[str, int]
+
+
 class SyncHealth(BaseModel):
     """At-a-glance health of the sync-job queue (catches "nothing consuming")."""
 
@@ -58,9 +66,14 @@ class SyncHealth(BaseModel):
     pending_count: int
     pending_oldest_at: datetime | None
     pending_oldest_age_seconds: int | None
+    # Metrics backlog + the threshold above which a manual drain self-throttles.
+    metrics_pending: int
+    metrics_throttle_threshold: int
     # Failure breakdown (top reasons) + the most recent failures for triage.
     failed_reasons: list[SyncFailureReason]
     recent_failed: list[SyncFailedJob]
+    # Per-task-type split so backlog is attributable (articles vs metrics).
+    by_type: list[JobTypeBreakdown]
     # Throughput in the last 24h, to tell "idle" from "broken".
     success_24h: int
     failed_24h: int
@@ -73,5 +86,7 @@ class SyncDrainResult(BaseModel):
 
     scheduled: bool
     pending: int
+    metrics_pending: int
     max_jobs: int
+    throttled: bool
     message: str

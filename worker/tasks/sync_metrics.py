@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.db.models import SyncJob, WechatAccount, WechatArticle
+from app.db.models import SyncJob, WechatArticle
 from app.providers.base import WeChatProvider
-from app.repositories import accounts as accounts_repo
 from app.repositories import articles as articles_repo
 from app.repositories import jobs as jobs_repo
 from app.repositories import usage as usage_repo
@@ -29,7 +28,8 @@ async def sync_metrics(
     if data is not None:
         articles_repo.add_metric_snapshot(session, article.id, data)
 
-    parent_account = session.get(WechatAccount, article.account_id)
-    if parent_account is not None:
-        accounts_repo.refresh_derived_attributes(session, parent_account)
+    # NOTE: account aggregates are recomputed *once per account* by the engine
+    # after a whole batch of metrics lands (see worker.engine). Doing it here per
+    # article thrashed the same WechatAccount row and blocked intra-account
+    # concurrency, so it's intentionally not done in this per-article task.
     session.flush()

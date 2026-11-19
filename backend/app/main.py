@@ -76,6 +76,13 @@ async def lifespan(app: FastAPI):
             retry_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await retry_task
+        # Close pooled provider HTTP clients so sockets don't leak on reload.
+        try:
+            from app.providers.registry import aclose_providers
+
+            await aclose_providers()
+        except Exception:  # pragma: no cover - shutdown best-effort
+            logger.exception("provider shutdown cleanup skipped")
 
 
 def create_app() -> FastAPI:

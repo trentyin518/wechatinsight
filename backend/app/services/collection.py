@@ -107,6 +107,46 @@ def enqueue_accounts_for_sync(
     return created
 
 
+def _active_job_exists(session: Session, job_type: str, target_id: int) -> bool:
+    """True when a job of this type is currently in-flight for the target."""
+    return (
+        session.scalar(
+            select(SyncJob.id)
+            .where(
+                SyncJob.job_type == job_type,
+                SyncJob.target_id == target_id,
+                SyncJob.status.in_(_ACTIVE_STATUSES),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def force_enqueue_articles(
+    session: Session,
+    account: WechatAccount,
+) -> int | None:
+    """Force-enqueue a SYNC_ARTICLES job for one account, bypassing TTL/cooldown.
+
+    Used by the console's manual "重新采集" button: an operator explicitly wants
+    a fresh pull even if the account was synced recently or a prior attempt
+    failed. We still skip only when an identical job is *currently in-flight* to
+    avoid duplicates. Returns the new job id, or ``None`` if already in-flight.
+    """
+    if _active_job_exists(session, JobType.SYNC_ARTICLES, account.id):
+        return None
+    job = jobs_repo.create_job(
+        session,
+        job_type=JobType.SYNC_ARTICLES,
+        target_type="account",
+        target_id=account.id,
+        provider=account.primary_provider,
+        priority=account.priority,
+    )
+    return job.id
+
+
 def enqueue_metrics_for_account(
     session: Session,
     account: WechatAccount,

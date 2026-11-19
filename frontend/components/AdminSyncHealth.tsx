@@ -16,6 +16,12 @@ const STATUS_LABEL: Record<string, string> = {
   FAILED: "失败",
 };
 
+const JOB_TYPE_LABEL: Record<string, string> = {
+  SYNC_ARTICLES: "文章同步",
+  SYNC_METRICS: "指标获取",
+  SYNC_ACCOUNT: "账号同步",
+};
+
 function ageLabel(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return "—";
   if (seconds < 60) return `${seconds} 秒`;
@@ -90,17 +96,20 @@ export function AdminSyncHealth() {
 
   const drain = useCallback(async () => {
     if (!data || data.pending_count <= 0) return;
-    const cap = Math.min(200, data.pending_count);
-    const ok = window.confirm(
-      `将消费最多 ${cap} 个排队任务，每个数据源调用约 $0.005，可能产生费用。\n` +
-        `可在「用量」页查看消耗。确定开始消费吗？`,
-    );
-    if (!ok) return;
+    const autoThrottle = data.metrics_pending >= data.metrics_throttle_threshold;
+    const lines = ["将消费排队任务，每个数据源调用约 $0.005，可能产生费用。"];
+    if (autoThrottle) {
+      lines.push(
+        `当前指标积压 ${data.metrics_pending} 个，本次将自动节流以控制单次费用。`,
+      );
+    }
+    lines.push("可在「用量」页查看消耗。确定开始消费吗？");
+    if (!window.confirm(lines.join("\n"))) return;
     setSubmitting(true);
     setNotice(null);
     const baseline = terminalCount(data);
     try {
-      const res = await triggerSyncDrain(200);
+      const res = await triggerSyncDrain();
       setNotice(res.message);
       if (res.scheduled) {
         progressRef.current = { baseline, target: res.max_jobs };
@@ -150,6 +159,14 @@ export function AdminSyncHealth() {
       {notice ? (
         <p className="muted small" style={{ marginTop: 8 }}>
           {notice}
+        </p>
+      ) : null}
+      {data &&
+        data.metrics_pending >= data.metrics_throttle_threshold &&
+        data.pending_count > 0 ? (
+        <p className="muted small" style={{ marginTop: 8 }}>
+          指标积压 {data.metrics_pending}（阈值 {data.metrics_throttle_threshold}），
+          消费将自动节流以控制费用。
         </p>
       ) : null}
       {error ? <p className="form-error">{error}</p> : null}
@@ -239,6 +256,46 @@ export function AdminSyncHealth() {
               </div>
               <div className="stat-label">24h 失败</div>
             </div>
+          </div>
+
+          <div className="card" style={{ marginTop: 18 }}>
+            <h3 style={{ marginTop: 0 }}>按任务类型</h3>
+            {data.by_type.length === 0 ? (
+              <p className="muted">暂无任务。</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {data.by_type.map((t) => (
+                  <div
+                    key={t.job_type}
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      fontSize: 13,
+                      borderBottom: "1px solid var(--border)",
+                      paddingBottom: 6,
+                    }}
+                  >
+                    <span style={{ minWidth: 90, fontWeight: 500 }}>
+                      {JOB_TYPE_LABEL[t.job_type] ?? t.job_type}
+                    </span>
+                    <span className="muted small">共 {t.total}</span>
+                    <span style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: (t.status_counts.PENDING ?? 0) ? 600 : 400 }}>
+                        排队 {t.status_counts.PENDING ?? 0}
+                      </span>
+                      <span>运行 {t.status_counts.RUNNING ?? 0}</span>
+                      <span>成功 {t.status_counts.SUCCESS ?? 0}</span>
+                      <span style={{ color: "#c9302c" }}>
+                        失败 {t.status_counts.FAILED ?? 0}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="card" style={{ marginTop: 18 }}>

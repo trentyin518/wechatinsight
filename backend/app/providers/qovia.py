@@ -107,52 +107,78 @@ class QoviaProvider:
         self._timeout = timeout
         self._max_retries = max_retries
         self._backoff = backoff
+        # Reuse one persistent client per event loop so consecutive calls keep
+        # their TCP/TLS connections (no handshake per call). Keyed by loop
+        # because the worker runs each cycle in a fresh asyncio.run() loop.
+        self._clients_by_loop: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
+        self._client_limits = httpx.Limits(
+            max_connections=20, max_keepalive_connections=10
+        )
+
+    def _shared_client(self) -> httpx.AsyncClient:
+        loop = asyncio.get_running_loop()
+        # Drop clients whose loop has closed (worker: new loop each cycle) so the
+        # cache can't grow unbounded across many scheduler ticks.
+        for dead in [lp for lp in self._clients_by_loop if lp.is_closed()]:
+            self._clients_by_loop.pop(dead, None)
+        client = self._clients_by_loop.get(loop)
+        if client is None:
+            client = httpx.AsyncClient(timeout=self._timeout, limits=self._client_limits)
+            self._clients_by_loop[loop] = client
+        return client
+
+    async def aclose(self) -> None:
+        """Close every cached persistent client (best-effort, on shutdown)."""
+        clients = list(self._clients_by_loop.values())
+        self._clients_by_loop.clear()
+        for client in clients:
+            try:
+                await client.aclose()
+            except Exception:  # pragma: no cover - shutdown best-effort
+                pass
 
     async def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         headers = {"Accept": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         url = f"{self._base_url}{path}"
-        client = self._client or httpx.AsyncClient(timeout=self._timeout)
-        owns_client = self._client is None
-        try:
-            for attempt in range(self._max_retries + 1):
-                try:
-                    response = await client.get(url, params=params, headers=headers)
-                except (httpx.TimeoutException, httpx.TransportError) as exc:
-                    if attempt < self._max_retries:
-                        await asyncio.sleep(self._backoff * (2**attempt))
-                        continue
-                    raise DataSourceUnavailable() from exc
+        # Use the caller-provided client (tests) or a per-loop persistent client
+        # (production: keep-alive across the batch). Neither is closed per call.
+        client = self._client if self._client is not None else self._shared_client()
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await client.get(url, params=params, headers=headers)
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                if attempt < self._max_retries:
+                    await asyncio.sleep(self._backoff * (2**attempt))
+                    continue
+                raise DataSourceUnavailable() from exc
 
-                if response.status_code == 200:
-                    try:
-                        return response.json()
-                    except ValueError as exc:
-                        raise ProviderError() from exc
-                if response.status_code == 401:
-                    raise ProviderError("数据源鉴权失败。", code="DATA_SOURCE_AUTH")
-                if response.status_code == 402:
-                    raise DataSourceBillingError()
-                if response.status_code == 403:
-                    raise ProviderError("数据源无权限访问该接口。", code="DATA_SOURCE_SCOPE_DENIED")
-                if response.status_code == 404:
-                    raise ProviderError("数据源中不存在该数据。", code="NOT_FOUND")
-                if response.status_code == 429:
-                    raise DataSourceRateLimited()
-                if response.status_code >= 500:
-                    busy = _is_upstream_busy(response)
-                    if attempt < self._max_retries:
-                        # Upstream "busy" bursts tend to last a little longer, so
-                        # wait a bit more before retrying those.
-                        delay = self._backoff * (2**attempt) * (3 if busy else 1)
-                        await asyncio.sleep(delay)
-                        continue
-                    raise DataSourceBusy() if busy else DataSourceUnavailable()
-                raise ProviderError("数据源请求被拒绝。", code="DATA_SOURCE_BAD_REQUEST")
-        finally:
-            if owns_client:
-                await client.aclose()
+            if response.status_code == 200:
+                try:
+                    return response.json()
+                except ValueError as exc:
+                    raise ProviderError() from exc
+            if response.status_code == 401:
+                raise ProviderError("数据源鉴权失败。", code="DATA_SOURCE_AUTH")
+            if response.status_code == 402:
+                raise DataSourceBillingError()
+            if response.status_code == 403:
+                raise ProviderError("数据源无权限访问该接口。", code="DATA_SOURCE_SCOPE_DENIED")
+            if response.status_code == 404:
+                raise ProviderError("数据源中不存在该数据。", code="NOT_FOUND")
+            if response.status_code == 429:
+                raise DataSourceRateLimited()
+            if response.status_code >= 500:
+                busy = _is_upstream_busy(response)
+                if attempt < self._max_retries:
+                    # Upstream "busy" bursts tend to last a little longer, so
+                    # wait a bit more before retrying those.
+                    delay = self._backoff * (2**attempt) * (3 if busy else 1)
+                    await asyncio.sleep(delay)
+                    continue
+                raise DataSourceBusy() if busy else DataSourceUnavailable()
+            raise ProviderError("数据源请求被拒绝。", code="DATA_SOURCE_BAD_REQUEST")
         raise DataSourceUnavailable()
 
     # --- mapping ---------------------------------------------------------

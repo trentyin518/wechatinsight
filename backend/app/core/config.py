@@ -93,12 +93,22 @@ class Settings:
     # metrics entirely). Averages are computed over at most this many latest
     # articles, which keeps the cost per viewed account bounded.
     metrics_per_account_limit: int = 10
+    # Max concurrent SYNC_METRICS provider calls (across and within accounts).
+    # Account aggregates are recomputed once per account after its batch, so
+    # intra-account calls can run in parallel without thrashing the account row.
+    # Bounded to respect the provider's rate limit (tune to qovia's real limit).
+    metrics_concurrency: int = 6
     # The standalone worker is the primary consumer of demand jobs. When it is
     # not running (e.g. local dev that only starts the API), the API drains a
     # bounded batch after responding to a search/detail request so the feature
     # still works end to end. Job claiming is atomic, so running this alongside
     # the worker never double-processes. 0 disables the in-process drain.
     on_demand_inline_drain_max_jobs: int = 60
+    # Backlog throttling for a manual drain: when the SYNC_METRICS queue is
+    # backed up, shrink the per-drain batch so a single click can't trigger a
+    # large charge. Only applies when the caller doesn't pass an explicit cap.
+    metrics_backlog_threshold: int = 100
+    metrics_backlog_throttled_max_jobs: int = 30
 
     # Authentication & onboarding. AUTH_ENFORCED gates whether data endpoints
     # require an approved session; it defaults to False so the endpoints and UI
@@ -162,6 +172,7 @@ def get_settings() -> Settings:
         on_demand_sync_ttl_hours=_int(os.getenv("ON_DEMAND_SYNC_TTL_HOURS"), 12),
         article_sync_max_pages=_int(os.getenv("ARTICLE_SYNC_MAX_PAGES"), 1),
         metrics_per_account_limit=_int(os.getenv("METRICS_PER_ACCOUNT_LIMIT"), 10),
+        metrics_concurrency=_int(os.getenv("METRICS_CONCURRENCY"), 6),
         on_demand_inline_drain_max_jobs=_int(
             os.getenv("ON_DEMAND_INLINE_DRAIN_MAX_JOBS"), 60
         ),

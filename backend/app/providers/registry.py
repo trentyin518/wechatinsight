@@ -65,3 +65,15 @@ def get_provider(name: str | None = None) -> WeChatProvider:
 def reset_provider_cache() -> None:
     """Test helper: drop cached adapter instances."""
     _INSTANCES.clear()
+
+
+async def aclose_providers() -> None:
+    """Close any cached provider resources (best-effort, on app shutdown)."""
+    for provider in list(_INSTANCES.values()):
+        close = getattr(provider, "aclose", None)
+        if close is not None:
+            try:
+                await close()
+            except Exception:  # pragma: no cover - shutdown best-effort
+                pass
+    _INSTANCES.clear()

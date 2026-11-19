@@ -8,6 +8,7 @@ from app.db.models import JobStatus, JobType, OnboardingStatus, SyncJob, User
 from app.main import app
 from app.repositories import jobs as jobs_repo
 from app.security import passwords
+from app.core.config import get_settings
 
 ADMIN_PHONE = "13700137002"
 ADMIN_PASSWORD = "admin1234"
@@ -66,6 +67,7 @@ def test_admin_sync_health_shape_and_counts(session):
             "pending_oldest_age_seconds",
             "failed_reasons",
             "recent_failed",
+            "by_type",
             "success_24h",
             "failed_24h",
             "worker_hint",
@@ -76,6 +78,9 @@ def test_admin_sync_health_shape_and_counts(session):
         assert body["total_jobs"] >= 2
         assert any(r["error_code"] == "DATA_SOURCE_BILLING" for r in body["failed_reasons"])
         assert any(j["error_code"] == "DATA_SOURCE_BILLING" for j in body["recent_failed"])
+        # Per-type breakdown attributes the backlog to a job type.
+        assert isinstance(body["by_type"], list)
+        assert any(t["job_type"] == "SYNC_ARTICLES" for t in body["by_type"])
 
 
 def test_admin_sync_requires_admin(client):
@@ -126,3 +131,46 @@ def test_admin_sync_drain_empty(session):
 def test_admin_sync_drain_requires_admin(client):
     resp = client.post("/api/v1/admin/sync/drain")
     assert resp.status_code in (401, 403)
+
+
+def _add_admin2(session):
+    session.add(
+        User(
+            phone="13800138002",
+            password_hash=passwords.hash_password("admin1234"),
+            display_name="运营B",
+            is_admin=True,
+            onboarding_status=OnboardingStatus.APPROVED,
+        )
+    )
+    session.commit()
+
+
+def test_admin_sync_drain_throttles_on_large_metrics_backlog(session):
+    _add_admin2(session)
+    threshold = get_settings().metrics_backlog_threshold
+    for i in range(threshold + 5):
+        jobs_repo.create_job(
+            session,
+            job_type=JobType.SYNC_METRICS,
+            target_type="article",
+            target_id=i,
+            provider="mock",
+        )
+    session.commit()
+
+    with TestClient(app) as admin_client:
+        login = admin_client.post(
+            "/api/v1/auth/login",
+            json={"phone": "13800138002", "password": "admin1234"},
+        )
+        assert login.status_code == 200
+
+        resp = admin_client.post("/api/v1/admin/sync/drain")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["scheduled"] is True
+        assert body["throttled"] is True
+        assert body["metrics_pending"] >= threshold + 5
+        assert body["max_jobs"] == get_settings().metrics_backlog_throttled_max_jobs
+        assert "节流" in body["message"]
