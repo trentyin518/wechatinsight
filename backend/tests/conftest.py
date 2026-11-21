@@ -55,6 +55,9 @@ def clean_db() -> Iterator[None]:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     rate_limiter.reset()
+    from app.services import accounts as _accounts_service
+
+    _accounts_service.reset_account_search_breaker()
     yield
     Base.metadata.drop_all(bind=engine)
 

@@ -117,6 +117,11 @@ async function AccountResults({ cq, selectedIds }: { cq: ConsoleQuery; selectedI
   return (
     <section className="console-results">
       <CollectingAutoRefresh active={data.items.some((account) => account.collecting)} />
+      {data.source === "content" ? (
+        <div className="console-hint">
+          未找到名称匹配的公众号，以下为发布相关内容的公众号（由内容检索匹配，资料可能不完整）。
+        </div>
+      ) : null}
       <div className="result-bar">
         <span className="result-count">
           找到 <b>{data.total}</b> 个公众号

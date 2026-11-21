@@ -104,6 +104,10 @@ class Settings:
     content_search_live_enabled: bool = True
     content_search_page_size: int = 20
     content_search_cache_ttl_seconds: int = 600
+    # Circuit breaker for the (billed, often-empty) account-search endpoint: after
+    # N consecutive empty results, skip the paid call for the cooldown window.
+    account_search_breaker_threshold: int = 3
+    account_search_breaker_cooldown_seconds: int = 900
     # The standalone worker is the primary consumer of demand jobs. When it is
     # not running (e.g. local dev that only starts the API), the API drains a
     # bounded batch after responding to a search/detail request so the feature
@@ -183,6 +187,12 @@ def get_settings() -> Settings:
         content_search_page_size=_int(os.getenv("CONTENT_SEARCH_PAGE_SIZE"), 20),
         content_search_cache_ttl_seconds=_int(
             os.getenv("CONTENT_SEARCH_CACHE_TTL_SECONDS"), 600
+        ),
+        account_search_breaker_threshold=_int(
+            os.getenv("ACCOUNT_SEARCH_BREAKER_THRESHOLD"), 3
+        ),
+        account_search_breaker_cooldown_seconds=_int(
+            os.getenv("ACCOUNT_SEARCH_BREAKER_COOLDOWN_SECONDS"), 900
         ),
         on_demand_inline_drain_max_jobs=_int(
             os.getenv("ON_DEMAND_INLINE_DRAIN_MAX_JOBS"), 60

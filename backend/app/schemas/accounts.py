@@ -81,6 +81,8 @@ class AccountSearchResponse(ORMModel):
     page: int
     page_size: int
     total: int
+    # "local" = stored accounts; "content" = derived from live content authors.
+    source: str = "local"
 
 
 class SimilarAccountsResponse(ORMModel):

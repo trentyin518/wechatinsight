@@ -39,6 +39,7 @@ export interface AccountSearchResponse {
   page: number;
   page_size: number;
   total: number;
+  source?: "local" | "content";
 }
 
 export interface SimilarAccountsResponse {

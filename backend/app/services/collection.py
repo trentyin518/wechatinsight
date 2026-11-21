@@ -91,8 +91,11 @@ def enqueue_accounts_for_sync(
     for account in accounts:
         if not _is_stale(account, now, settings.on_demand_sync_ttl_hours):
             continue
-        if accounts_repo.get_provider_account_id(session, account) is None:
-            continue  # nothing to map articles to
+        provider_account_id = accounts_repo.get_provider_account_id(session, account)
+        if provider_account_id is None or provider_account_id.startswith("content:"):
+            # No mapping to fetch articles with (or a content-derived stub with
+            # no real mp_id) — don't spend a paid call on it.
+            continue
         if _has_recent_job(session, JobType.SYNC_ARTICLES, account.id):
             continue
         jobs_repo.create_job(
