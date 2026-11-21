@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -95,6 +95,7 @@ function SelectRow({
 
 export function SearchFilters({ initial }: { initial: ConsoleQuery }) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [scope, setScope] = useState(NAME_SCOPES[0]);
   const [keyword, setKeyword] = useState(initial.q);
 
@@ -103,16 +104,20 @@ export function SearchFilters({ initial }: { initial: ConsoleQuery }) {
   }, [initial.q]);
 
   function push(next: ConsoleQuery) {
-    router.push(consoleQueryToHref({ ...next, page: 1 }));
+    startTransition(() => router.push(consoleQueryToHref({ ...next, page: 1 })));
   }
 
   function itemOnSelect(patch: Partial<ConsoleQuery>) {
-    router.push(consoleQueryToHref({ ...initial, ...patch, q: keyword.trim(), page: 1 }));
+    startTransition(() =>
+      router.push(consoleQueryToHref({ ...initial, ...patch, q: keyword.trim(), page: 1 })),
+    );
   }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    router.push(consoleQueryToHref({ ...initial, q: keyword.trim(), page: 1 }));
+    startTransition(() =>
+      router.push(consoleQueryToHref({ ...initial, q: keyword.trim(), page: 1 })),
+    );
   }
 
   const isArticle = initial.mode === "article";
@@ -124,6 +129,7 @@ export function SearchFilters({ initial }: { initial: ConsoleQuery }) {
           type="button"
           className={`filter-searchtab${!isArticle ? " active" : ""}`}
           onClick={() => push({ ...initial, mode: "name" })}
+          disabled={isPending}
         >
           按关键词搜索
         </button>
@@ -131,6 +137,7 @@ export function SearchFilters({ initial }: { initial: ConsoleQuery }) {
           type="button"
           className={`filter-searchtab${isArticle ? " active" : ""}`}
           onClick={() => push({ ...initial, mode: "article" })}
+          disabled={isPending}
         >
           按文章内容搜索
         </button>
@@ -183,8 +190,8 @@ export function SearchFilters({ initial }: { initial: ConsoleQuery }) {
               : "请输入公众号名称、公众号ID、公众号发文地址"
           }
         />
-        <button type="submit" className="filter-search-btn">
-          搜索
+        <button type="submit" className="filter-search-btn" disabled={isPending}>
+          {isPending ? "搜索中…" : "搜索"}
         </button>
         {isArticle ? (
           <button type="button" className="filter-adv-btn" title="更多维度以数据源实际提供为准">

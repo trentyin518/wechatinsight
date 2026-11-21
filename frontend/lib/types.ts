@@ -39,7 +39,7 @@ export interface AccountSearchResponse {
   page: number;
   page_size: number;
   total: number;
-  source?: "local" | "content";
+  source?: "local" | "content" | "pending";
 }
 
 export interface SimilarAccountsResponse {
@@ -98,7 +98,7 @@ export interface ArticleSearchResponse {
   page: number;
   page_size: number;
   total: number;
-  source?: "local" | "live";
+  source?: "local" | "live" | "pending";
 }
 
 export interface MetricPoint {

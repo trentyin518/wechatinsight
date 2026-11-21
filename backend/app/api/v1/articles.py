@@ -46,6 +46,7 @@ async def search_articles(
     time_days: int = Query(0, ge=0, description="发布时间范围（天，0=全部）"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    live: bool = Query(True, description="是否在本地无结果时从数据源实时补齐"),
     session: Session = Depends(get_db),
     _user: User | None = Depends(require_approved),
 ) -> ArticleSearchResponse:
@@ -89,32 +90,19 @@ async def search_articles(
             )
         )
 
-    # No collected articles matched: fall back to live content search so a
-    # keyword that matches articles (but nothing we've collected) isn't empty.
+    # No collected articles matched → live content search. Cache warm → results
+    # now ("live"); cache cold → a background prime is scheduled and we return
+    # "pending" immediately (the client polls; the page never blocks).
     source = "local"
-    if not items and q.strip():
-        external = await articles_service.search_external_articles(session, q)
-        if external:
-            items = [
-                ArticleSearchItem(
-                    id=-(idx + 1),  # negative id signals "external / not stored"
-                    title=p.title,
-                    article_url=p.url,
-                    provider=p.provider,
-                    published_at=p.published_at,
-                    is_original=p.is_original,
-                    author=p.author,
-                    ip_region=p.ip_region,
-                    summary=p.summary,
-                    account_id=0,
-                    account_name=p.author or "—",
-                    account_avatar_url=p.author_avatar_url,
-                    external=True,
-                )
-                for idx, p in enumerate(external)
-            ]
+    if not items and live:
+        state = articles_service.resolve_live_articles(q, live=live)
+        if state.status == "ready":
+            items = [_external_article_item(idx, p) for idx, p in enumerate(state.items)]
             total = len(items)
             source = "live"
+        elif state.status == "pending":
+            total = 0
+            source = "pending"
 
     return ArticleSearchResponse(
         items=items,
@@ -122,6 +110,24 @@ async def search_articles(
         page_size=page_size,
         total=total,
         source=source,
+    )
+
+
+def _external_article_item(idx: int, p) -> ArticleSearchItem:
+    return ArticleSearchItem(
+        id=-(idx + 1),  # negative id signals "external / not stored"
+        title=p.title,
+        article_url=p.url,
+        provider=p.provider,
+        published_at=p.published_at,
+        is_original=p.is_original,
+        author=p.author,
+        ip_region=p.ip_region,
+        summary=p.summary,
+        account_id=0,
+        account_name=p.author or "—",
+        account_avatar_url=p.author_avatar_url,
+        external=True,
     )
 
 

@@ -130,6 +130,8 @@ async def search_accounts(
     is_original: bool | None = Query(None, description="仅原创号"),
     has_video: bool | None = Query(None, description="仅带视频内容"),
     service_only: bool | None = Query(None, description="仅服务号"),
+    live: bool = Query(True, description="本地无结果时是否从数据源实时补齐"),
+    defer_live: bool = Query(False, description="跳过账号端点，直接用内容检索补齐（客户端快路径）"),
     session: Session = Depends(get_db),
     _user: User | None = Depends(require_approved),
 ) -> AccountSearchResponse:
@@ -151,7 +153,7 @@ async def search_accounts(
         service_only=service_only,
     )
     result = await accounts_service.search_accounts(
-        session, q, page, page_size, filters=filters, mode=mode
+        session, q, page, page_size, filters=filters, mode=mode, live=live, defer_live=defer_live
     )
     session.commit()
     states = accounts_repo.collection_states(session, result.items)

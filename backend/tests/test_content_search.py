@@ -100,18 +100,32 @@ def test_articles_endpoint_falls_back_to_live_content(client, monkeypatch):
                 )
             ]
 
-    articles_service._EXTERNAL_CACHE.clear()
+    articles_service.reset_external_state()
     monkeypatch.setattr(articles_service, "get_provider", lambda: _Fake())
 
+    # Cold cache: endpoint returns pending immediately (prime scheduled), no items.
     resp = client.get("/api/v1/articles", params={"q": "阳江日报"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["source"] == "live"
-    assert body["items"], "expected live results, not an empty page"
-    item = body["items"][0]
+    assert body["source"] == "pending"
+    assert body["items"] == []
+    assert body["total"] == 0
+
+    # Warm cache: live results returned instantly.
+    articles_service._cache_put(
+        "fake", "阳江日报",
+        [ProviderArticle(provider="fake", title="实时标题",
+                         url="https://mp.weixin.qq.com/s?__biz=X", author="作者A", is_original=True)],
+    )
+    resp2 = client.get("/api/v1/articles", params={"q": "阳江日报"})
+    body2 = resp2.json()
+    assert body2["source"] == "live"
+    assert len(body2["items"]) == 1
+    item = body2["items"][0]
     assert item["external"] is True
     assert item["id"] < 0  # negative id marks external / not stored
     assert item["article_url"].startswith("https://mp.weixin.qq.com/")
+    assert item["title"] == "实时标题"
 
 
 async def test_account_search_derives_accounts_from_content(session):
@@ -134,9 +148,21 @@ async def test_account_search_derives_accounts_from_content(session):
                 ),
             ]
 
-    articles_service._EXTERNAL_CACHE.clear()
+    articles_service.reset_external_state()
     settings = _settings(content_search_live_enabled=True, allow_cold_start_search=True)
 
+    # Cold cache → pending (prime scheduled), never empty.
+    pending = await accounts_service.search_accounts(
+        session, "阳江日报", 1, 20, provider=_Fake(), settings=settings, mode="name"
+    )
+    assert pending.source == "pending"
+    assert pending.items == []
+
+    # Warm cache → derive accounts from cached authors.
+    from app.services import articles as _articles_svc
+    await _articles_svc.search_external_articles(
+        session, "阳江日报", provider=_Fake(), settings=settings
+    )
     result = await accounts_service.search_accounts(
         session, "阳江日报", 1, 20, provider=_Fake(), settings=settings, mode="name"
     )
@@ -164,7 +190,7 @@ async def test_account_search_breaker_skips_paid_calls_after_empty_streak(sessio
             return [ProviderArticle(provider="fake", title="t", url="https://x/1", author="作者X")]
 
     accounts_service.reset_account_search_breaker()
-    articles_service._EXTERNAL_CACHE.clear()
+    articles_service.reset_external_state()
     settings = _settings(
         content_search_live_enabled=True,
         allow_cold_start_search=True,
@@ -172,6 +198,10 @@ async def test_account_search_breaker_skips_paid_calls_after_empty_streak(sessio
         account_search_breaker_cooldown_seconds=600,
     )
     provider = _Fake()
+    # Warm the content cache so each search resolves to content (not pending).
+    await articles_service.search_external_articles(
+        session, "阳江日报", provider=provider, settings=settings
+    )
     for _ in range(4):
         res = await accounts_service.search_accounts(
             session, "阳江日报", 1, 20, provider=provider, settings=settings, mode="name"
@@ -181,3 +211,45 @@ async def test_account_search_breaker_skips_paid_calls_after_empty_streak(sessio
     # threshold=2: only the first two calls pay for account_search; the breaker
     # then short-circuits the (empty, billed) call for the cooldown window.
     assert provider.account_calls == 2
+
+
+async def test_account_search_defer_live_skips_account_search(session):
+    from app.providers.base import SearchPage
+    from app.services import accounts as accounts_service
+
+    class _Fake:
+        name = "fake"
+        supports_content_search = True
+
+        def __init__(self) -> None:
+            self.account_calls = 0
+
+        async def search_accounts(self, keyword, page=1, page_size=20):  # noqa: ANN001, ANN201
+            self.account_calls += 1
+            return SearchPage(items=[], next_cursor=None)
+
+        async def search_content(self, query, page_size=20):  # noqa: ANN001, ANN201
+            return [ProviderArticle(provider="fake", title="t", url="https://x/1", author="作者A")]
+
+    accounts_service.reset_account_search_breaker()
+    articles_service.reset_external_state()
+    settings = _settings(content_search_live_enabled=True, allow_cold_start_search=True)
+    provider = _Fake()
+
+    cold = await accounts_service.search_accounts(
+        session, "阳江日报", 1, 20, provider=provider, settings=settings,
+        mode="name", defer_live=True,
+    )
+    assert cold.source == "pending"
+    assert provider.account_calls == 0  # defer_live must not hit account_search
+
+    await articles_service.search_external_articles(
+        session, "阳江日报", provider=provider, settings=settings
+    )
+    warm = await accounts_service.search_accounts(
+        session, "阳江日报", 1, 20, provider=provider, settings=settings,
+        mode="name", defer_live=True,
+    )
+    assert warm.source == "content"
+    assert {a.name for a in warm.items} == {"作者A"}
+    assert provider.account_calls == 0

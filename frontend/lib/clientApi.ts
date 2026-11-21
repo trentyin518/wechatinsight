@@ -2,6 +2,8 @@
 
 import { ApiError } from "./errors";
 import type {
+  AccountSearchResponse,
+  ArticleSearchResponse,
   MeResponse,
   OnboardingStatusResponse,
   OnboardingSubmitInput,
@@ -168,4 +170,28 @@ export function removeSelection(accountId: number): Promise<SelectionState> {
     method: "DELETE",
     credentials: "include",
   });
+}
+
+/** Client-side console search: accounts (live=true fills from data source). */
+export function searchAccountsClient(
+  params: Record<string, string>,
+  pageSize = 20,
+  live = true,
+  deferLive = false,
+): Promise<AccountSearchResponse> {
+  const query = new URLSearchParams({ page_size: String(pageSize), ...params });
+  if (!live) query.set("live", "false");
+  if (deferLive) query.set("defer_live", "true");
+  return requestJson<AccountSearchResponse>(`/api/v1/accounts?${query.toString()}`);
+}
+
+/** Client-side console search: article content. */
+export function searchArticlesClient(
+  params: Record<string, string>,
+  pageSize = 20,
+  live = true,
+): Promise<ArticleSearchResponse> {
+  const query = new URLSearchParams({ page_size: String(pageSize), ...params });
+  if (!live) query.set("live", "false");
+  return requestJson<ArticleSearchResponse>(`/api/v1/articles?${query.toString()}`);
 }

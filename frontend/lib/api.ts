@@ -83,8 +83,10 @@ export function searchAccounts(
 export function searchAccountsWithFilters(
   params: Record<string, string>,
   pageSize = 20,
+  live = true,
 ): Promise<AccountSearchResponse> {
   const query = new URLSearchParams({ page_size: String(pageSize), ...params });
+  if (!live) query.set("live", "false");
   return getJson<AccountSearchResponse>(`/api/v1/accounts?${query.toString()}`);
 }
 
@@ -92,8 +94,10 @@ export function searchAccountsWithFilters(
 export function searchArticles(
   params: Record<string, string>,
   pageSize = 20,
+  live = true,
 ): Promise<ArticleSearchResponse> {
   const query = new URLSearchParams({ page_size: String(pageSize), ...params });
+  if (!live) query.set("live", "false");
   return getJson<ArticleSearchResponse>(`/api/v1/articles?${query.toString()}`);
 }
 

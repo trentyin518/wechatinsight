@@ -32,7 +32,10 @@ def _ensure_defaults() -> None:
     register_provider(
         "qovia",
         lambda settings: QoviaProvider(
-            api_key=settings.qovia_api_key, base_url=settings.qovia_base_url
+            api_key=settings.qovia_api_key,
+            base_url=settings.qovia_base_url,
+            timeout=settings.provider_timeout_seconds,
+            max_retries=settings.provider_max_retries,
         ),
     )
     register_provider(

@@ -1,34 +1,11 @@
-import { AccountResultCard } from "@/components/console/AccountResultCard";
-import { ArticleTable } from "@/components/console/ArticleTable";
-import { ArticleToolbar } from "@/components/console/ArticleToolbar";
-import { CollectingAutoRefresh } from "@/components/console/CollectingAutoRefresh";
 import { SearchFilters } from "@/components/console/SearchFilters";
-import { Pagination } from "@/components/Pagination";
-import { StateMessage } from "@/components/StateMessage";
-import { ApiError, getServerSelection, searchAccountsWithFilters, searchArticles } from "@/lib/api";
-import {
-  consoleQueryToApiParams,
-  consoleQueryToArticleApiParams,
-  consoleQueryToSearchParams,
-  parseConsoleQuery,
-  type ConsoleQuery,
-} from "@/lib/consoleFilters";
+import { LiveFillAccounts, LiveFillArticles } from "@/components/console/LiveFill";
+import { getServerSelection } from "@/lib/api";
+import { parseConsoleQuery, type ConsoleQuery } from "@/lib/consoleFilters";
 
 interface ConsolePageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
-
-const COLUMN_CHIPS = [
-  "西瓜指数",
-  "活跃粉丝",
-  "头条平均阅读",
-  "头条平均点赞",
-  "头条平均转发",
-  "头条平均在看",
-  "头条平均留言",
-  "周发文数",
-  "关键词匹配",
-];
 
 function hasCriteria(cq: ConsoleQuery): boolean {
   const nameMode = Boolean(
@@ -53,7 +30,7 @@ export default async function ConsoleSearchPage({ searchParams }: ConsolePagePro
   const sp = await searchParams;
   const cq = parseConsoleQuery(sp);
   const selection = await getServerSelection();
-  const selectedIds = new Set((selection?.items ?? []).map((item) => item.account.id));
+  const selectedIds = (selection?.items ?? []).map((item) => item.account.id);
 
   return (
     <>
@@ -65,141 +42,13 @@ export default async function ConsoleSearchPage({ searchParams }: ConsolePagePro
             : "输入关键词，或直接按行业 / 活粉 / 阅读 / 报价 / 广告量 / 地区等条件筛选公众号。平台仅展示已收录账号，并标注数据来源与采集时间。"}
         </div>
       ) : cq.mode === "article" ? (
-        <ArticleResultsSection cq={cq} />
+        // Article list is fully client-filled: SSR never runs an article query,
+        // so navigating/searching is never blocked by the (slow) data source.
+        <LiveFillArticles cq={cq} />
       ) : (
-        <AccountResults cq={cq} selectedIds={selectedIds} />
+        // Account list is fully client-filled too.
+        <LiveFillAccounts cq={cq} selectedIds={selectedIds} />
       )}
     </>
   );
-}
-
-function baseExtraQuery(cq: ConsoleQuery): Record<string, string> {
-  return Object.fromEntries(consoleQueryToSearchParams({ ...cq, page: 1 }));
-}
-
-async function AccountResults({ cq, selectedIds }: { cq: ConsoleQuery; selectedIds: Set<number> }) {
-  let data;
-  try {
-    data = await searchAccountsWithFilters(consoleQueryToApiParams(cq));
-  } catch (error) {
-    return <SearchError error={error} />;
-  }
-
-  if (data.items.length === 0) {
-    // Don't dead-end on account search. When a keyword matches content rather
-    // than an account, fall back to live article results so the page isn't empty.
-    const keyword = (cq.q ?? "").trim();
-    if (keyword) {
-      try {
-        const related = await searchArticles(consoleQueryToArticleApiParams(cq));
-        if (related.items.length > 0) {
-          return (
-            <section className="art-results">
-              <div className="console-hint">
-                未找到匹配的公众号，但找到 {related.total} 篇相关内容（实时检索结果）。
-              </div>
-              <ArticleTable items={related.items} />
-            </section>
-          );
-        }
-      } catch {
-        // fall through to the empty state on any live-search failure
-      }
-    }
-    return (
-      <StateMessage
-        title="没有符合条件的公众号"
-        description="可尝试放宽筛选条件，或更换关键词。缺失指标的账号不会被对应的数值区间命中。"
-      />
-    );
-  }
-
-  return (
-    <section className="console-results">
-      <CollectingAutoRefresh active={data.items.some((account) => account.collecting)} />
-      {data.source === "content" ? (
-        <div className="console-hint">
-          未找到名称匹配的公众号，以下为发布相关内容的公众号（由内容检索匹配，资料可能不完整）。
-        </div>
-      ) : null}
-      <div className="result-bar">
-        <span className="result-count">
-          找到 <b>{data.total}</b> 个公众号
-        </span>
-        <div className="column-chips">
-          {COLUMN_CHIPS.map((label) => (
-            <span className="column-chip" key={label}>
-              {label}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="acct-list">
-        {data.items.map((account) => (
-          <AccountResultCard
-            key={account.id}
-            account={account}
-            initialSelected={selectedIds.has(account.id)}
-          />
-        ))}
-      </div>
-
-      <Pagination
-        page={data.page}
-        pageSize={data.page_size}
-        total={data.total}
-        basePath="/console"
-        extraQuery={baseExtraQuery(cq)}
-      />
-    </section>
-  );
-}
-
-async function ArticleResultsSection({ cq }: { cq: ConsoleQuery }) {
-  let data;
-  try {
-    data = await searchArticles(consoleQueryToArticleApiParams(cq));
-  } catch (error) {
-    return <SearchError error={error} />;
-  }
-
-  if (data.items.length === 0) {
-    return (
-      <StateMessage
-        title="没有符合条件的文章"
-        description="可尝试更换关键词或放宽筛选条件；文章检索仅覆盖已收录文章。"
-      />
-    );
-  }
-
-  return (
-    <section className="art-results">
-      <ArticleToolbar initial={cq} total={data.total} />
-      {data.source === "live" ? (
-        <div className="console-hint">
-          本地暂未收录该关键词的文章，以下为实时内容检索结果（未收录，点击标题查看原文）。
-        </div>
-      ) : null}
-      <ArticleTable items={data.items} />
-      <Pagination
-        page={data.page}
-        pageSize={data.page_size}
-        total={data.total}
-        basePath="/console"
-        extraQuery={baseExtraQuery(cq)}
-      />
-    </section>
-  );
-}
-
-function SearchError({ error }: { error: unknown }) {
-  const apiError = error as ApiError;
-  const message =
-    apiError.code === "DATA_SOURCE_BUSY"
-      ? "数据源繁忙，请稍后重试。已收录的数据仍可访问。"
-      : apiError.code === "DATA_SOURCE_UNAVAILABLE"
-        ? "当前暂时无法从数据源更新数据，请稍后重试。已收录的数据仍可访问。"
-        : apiError.message;
-  return <StateMessage tone="error" title="搜索失败" description={message} />;
 }

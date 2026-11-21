@@ -98,27 +98,18 @@ def _enqueue_visible_page(
         logger.exception("failed to enqueue on-demand account enrichment")
 
 
-async def _derive_accounts_from_content(
+def _upsert_accounts_from_articles(
     session: Session,
-    keyword: str,
-    provider: WeChatProvider,
-    settings: Settings,
+    articles: list,
+    provider_name: str,
 ) -> list[WechatAccount]:
-    """Derive 公众号 from live content-search authors when account search is empty.
+    """Upsert 公众号 derived from content-search authors (deduped by name).
 
     The account-search endpoint indexes account *names*; content keywords (e.g. a
     newspaper's name appearing in article bodies) don't match it. ``/v1/search``
     does find the articles, whose ``author`` is the publishing 公众号 — so we
     upsert those as lightweight accounts so the 账号 view isn't empty.
     """
-    from app.services import articles as articles_service
-
-    if not settings.content_search_live_enabled:
-        return []
-    provider_name = getattr(provider, "name", "unknown")
-    articles = await articles_service.search_external_articles(
-        session, keyword, provider=provider, settings=settings
-    )
     derived: list[WechatAccount] = []
     seen: set[str] = set()
     for article in articles:
@@ -150,6 +141,8 @@ async def search_accounts(
     settings: Settings | None = None,
     filters: AccountFilters | None = None,
     mode: str = "name",
+    live: bool = True,
+    defer_live: bool = False,
 ) -> SearchResult:
     if mode == "article":
         items, total = accounts_repo.search_by_article_local(
@@ -169,6 +162,27 @@ async def search_accounts(
     if not settings.allow_cold_start_search:
         _enqueue_visible_page(session, items, settings)
         return SearchResult(items=items, total=total)
+
+    # ``live=False`` disables every provider round-trip (SSR fast path: local
+    # results only; the client fills the live gap afterwards).
+    if not live:
+        return SearchResult(items=items, total=total)
+
+    if defer_live and keyword.strip():
+        from app.services import articles as articles_service
+
+        provider = provider or get_provider()
+        state = articles_service.resolve_live_articles(
+            keyword, live=True, provider=provider, settings=settings
+        )
+        if state.status == "ready":
+            derived = _upsert_accounts_from_articles(
+                session, state.items, getattr(provider, "name", "unknown")
+            )
+            return SearchResult(items=derived, total=len(derived), source="content")
+        if state.status == "pending":
+            return SearchResult(items=[], total=0, source="pending")
+        return SearchResult(items=[], total=0)
 
     provider_name = getattr(provider, "name", None) or settings.default_provider
 
@@ -244,13 +258,23 @@ async def search_accounts(
             cooldown_seconds=settings.account_search_breaker_cooldown_seconds,
         )
 
-    # Account-name search found nothing. A content keyword (e.g. a newspaper name
-    # that only appears inside articles) still matches via /v1/search — derive
-    # the publishing 公众号 from those authors so the account view isn't empty.
+    # Account-name search found nothing. Use a warm content cache immediately;
+    # otherwise schedule the slow provider call and return without blocking.
     if not account_items:
-        derived = await _derive_accounts_from_content(session, keyword, provider, settings)
-        if derived:
-            return SearchResult(items=derived, total=len(derived), source="content")
+        from app.services import articles as articles_service
+
+        provider_name = getattr(provider, "name", "unknown")
+        state = articles_service.resolve_live_articles(
+            keyword, live=True, provider=provider, settings=settings
+        )
+        if state.status == "ready":
+            derived = _upsert_accounts_from_articles(
+                session, state.items, provider_name
+            )
+            if derived:
+                return SearchResult(items=derived, total=len(derived), source="content")
+        elif state.status == "pending":
+            return SearchResult(items=[], total=0, source="pending")
 
     stored_ids: list[int] = []
     for account in account_items:

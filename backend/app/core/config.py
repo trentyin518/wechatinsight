@@ -108,6 +108,10 @@ class Settings:
     # N consecutive empty results, skip the paid call for the cooldown window.
     account_search_breaker_threshold: int = 3
     account_search_breaker_cooldown_seconds: int = 900
+    # Per-call provider HTTP timeout / retry budget. Kept modest so an interactive
+    # search fails fast instead of hanging on a slow upstream.
+    provider_timeout_seconds: float = 15.0
+    provider_max_retries: int = 1
     # The standalone worker is the primary consumer of demand jobs. When it is
     # not running (e.g. local dev that only starts the API), the API drains a
     # bounded batch after responding to a search/detail request so the feature
@@ -194,6 +198,8 @@ def get_settings() -> Settings:
         account_search_breaker_cooldown_seconds=_int(
             os.getenv("ACCOUNT_SEARCH_BREAKER_COOLDOWN_SECONDS"), 900
         ),
+        provider_timeout_seconds=_float(os.getenv("PROVIDER_TIMEOUT_SECONDS"), 15.0),
+        provider_max_retries=_int(os.getenv("PROVIDER_MAX_RETRIES"), 1),
         on_demand_inline_drain_max_jobs=_int(
             os.getenv("ON_DEMAND_INLINE_DRAIN_MAX_JOBS"), 60
         ),
