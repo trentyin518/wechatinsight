@@ -20,6 +20,9 @@ _DB_FILE = Path(tempfile.gettempdir()) / "wechat_insight_pytest.db"
 os.environ.setdefault("APP_ENV", "test")
 os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{_DB_FILE}"
 os.environ.setdefault("DEFAULT_PROVIDER", "mock")
+# Tests must never hit real vendors (a dev .env may hold real keys), so pin the
+# failover chain to mock regardless of any ambient PROVIDER_ORDER / .env.
+os.environ["PROVIDER_ORDER"] = "mock"
 os.environ.setdefault("ALLOW_COLD_START_SEARCH", "true")
 os.environ.setdefault("UPLOAD_DIR", str(Path(tempfile.gettempdir()) / "wechat_insight_uploads"))
 # The developer's local .env may enable the gray-rollout flags (AUTH_ENFORCED,

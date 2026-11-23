@@ -53,7 +53,8 @@ class Settings:
     qovia_base_url: str
     xmedi_api_key: str
     xmedi_base_url: str
-    # Ordered data sources for automatic failover (empty => just default_provider).
+    # Ordered data sources for automatic failover. Default (env unset) is
+    # ``xmedi,qovia`` — Xmedi first, Qovia as fallback. Empty => default_provider.
     provider_order: tuple[str, ...] = ()
     # Search-result cache: identical keywords are answered from the DB instead of
     # hitting a billed provider again. Empty results are kept longer on purpose.
@@ -178,7 +179,8 @@ def get_settings() -> Settings:
         xmedi_base_url=os.getenv("XMEDI_BASE_URL", "https://www.xmedi.cn/api/v1"),
         provider_order=tuple(
             p.strip().lower()
-            for p in os.getenv("PROVIDER_ORDER", "").split(",")
+            # 首选极媒（xmedi），失败自动切换到 Qovia 兜底。
+            for p in os.getenv("PROVIDER_ORDER", "xmedi,qovia").split(",")
             if p.strip()
         ),
         search_cache_ttl_hours=_int(os.getenv("SEARCH_CACHE_TTL_HOURS"), 24),

@@ -1,12 +1,13 @@
 """Provider connectivity check (never prints secrets).
 
 Usage (from backend/):
-  DEFAULT_PROVIDER=qovia PROVIDER_ORDER=qovia,xmedi \
-  QOVIA_BASE_URL=... QOVIA_API_KEY=... XMEDI_API_KEY=... \
+  PROVIDER_ORDER=xmedi,qovia \
+  XMEDI_API_KEY=... QOVIA_BASE_URL=... QOVIA_API_KEY=... \
     python -m scripts.check_provider "科技"
 
-By default this probes the configured **failover chain** with a single billed
-call (primary first, switching on failure). Flags:
+By default Xmedi is the primary source and Qovia the fallback; this probes the
+configured **failover chain** with a single billed call (primary first, switching
+on failure). Flags:
 
   --provider NAME   probe one specific source only
   --all             probe every configured source individually (bills each)
