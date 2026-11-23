@@ -53,6 +53,8 @@ class Settings:
     qovia_base_url: str
     xmedi_api_key: str
     xmedi_base_url: str
+    # Ordered data sources for automatic failover (empty => just default_provider).
+    provider_order: tuple[str, ...] = ()
     # Search-result cache: identical keywords are answered from the DB instead of
     # hitting a billed provider again. Empty results are kept longer on purpose.
     search_cache_ttl_hours: int = 24
@@ -173,7 +175,12 @@ def get_settings() -> Settings:
         qovia_api_key=os.getenv("QOVIA_API_KEY", ""),
         qovia_base_url=os.getenv("QOVIA_BASE_URL", "https://api.qovia.example.com"),
         xmedi_api_key=os.getenv("XMEDI_API_KEY", ""),
-        xmedi_base_url=os.getenv("XMEDI_BASE_URL", "https://api.xmedi.example.com"),
+        xmedi_base_url=os.getenv("XMEDI_BASE_URL", "https://www.xmedi.cn/api/v1"),
+        provider_order=tuple(
+            p.strip().lower()
+            for p in os.getenv("PROVIDER_ORDER", "").split(",")
+            if p.strip()
+        ),
         search_cache_ttl_hours=_int(os.getenv("SEARCH_CACHE_TTL_HOURS"), 24),
         empty_search_cache_ttl_hours=_int(os.getenv("EMPTY_SEARCH_CACHE_TTL_HOURS"), 168),
         search_retry_max_attempts=_int(os.getenv("SEARCH_RETRY_MAX_ATTEMPTS"), 8),

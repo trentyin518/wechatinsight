@@ -111,6 +111,8 @@ npm run build                           # 生产构建校验
 ```bash
 cd backend
 DEFAULT_PROVIDER=qovia python -m scripts.check_provider 科技
+# 多数据源自动切换（主 qovia → 备 xmedi，失败自动切换；--all 逐个探测每个已配置源）
+PROVIDER_ORDER=qovia,xmedi XMEDI_API_KEY=xm_live_... python -m scripts.check_provider 科技
 ```
 
 - 切到真实数据：把 `.env` 的 `DEFAULT_PROVIDER=qovia`。当前账户余额为 0、靠 trial（`meta.billed=false`），正式采集前需充值；每次成功调用约 `$0.005`（以账单为准）。
