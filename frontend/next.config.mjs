@@ -20,8 +20,9 @@ if (
 
 const nextConfig = {
   reactStrictMode: true,
-  // Emit a minimal self-contained server bundle for Docker / bare-metal hosting.
-  output: "standalone",
+  // Standalone bundle is only needed for the Docker image. Opt-in via NEXT_OUTPUT
+  // so bare-metal `next start` (systemd) keeps working.
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" } : {}),
   // Allow building even when the API base is only known at deploy time.
   env: {
     NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000",

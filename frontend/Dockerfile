@@ -16,6 +16,9 @@ ARG API_PROXY_TARGET=http://localhost:8000
 ENV API_PROXY_TARGET=${API_PROXY_TARGET}
 ARG NEXT_PUBLIC_AUTH_ENFORCED=false
 ENV NEXT_PUBLIC_AUTH_ENFORCED=${NEXT_PUBLIC_AUTH_ENFORCED}
+# Emit the minimal standalone server bundle for this image.
+ARG NEXT_OUTPUT=standalone
+ENV NEXT_OUTPUT=${NEXT_OUTPUT}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Guarantee a public/ dir exists so the runner COPY below never fails.

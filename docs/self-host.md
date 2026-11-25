@@ -27,7 +27,7 @@
 
 ## 2. 方案 A：Docker（推荐做隔离/可复现）
 
-已提供 `frontend/Dockerfile`（多阶段、`output: "standalone"`）与 `frontend/.dockerignore`。
+已提供 `frontend/Dockerfile`（多阶段；构建时自动加 `NEXT_OUTPUT=standalone` 产出最小 server bundle）。宿主机走 `next start` 时**不要**设 `NEXT_OUTPUT`，保持默认即可。
 
 ```bash
 cd frontend
@@ -139,4 +139,4 @@ curl -s http://127.0.0.1:3000/api/v1/health || true
 cd backend && .venv/bin/python -m scripts.check_provider "科技"
 ```
 
-`docker build`/`next build` 出现 `API 代理目标仍是本机地址` 警告时，说明 `API_PROXY_TARGET` 没传对——线上务必设置为真实后端地址后重新构建。
+构建时出现 `API 代理目标仍是本机地址` 警告：若前后端**不在同一台机器**，说明 `API_PROXY_TARGET` 没设对，务必填真实后端地址后重新构建；若前后端**同机**（后端就在 `127.0.0.1:8000`），这个警告是误报，可忽略。
