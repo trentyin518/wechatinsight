@@ -1,0 +1,25 @@
+[Unit]
+Description=WeChat Insight Web (Next.js frontend)
+After=network.target
+
+[Service]
+Type=simple
+# Adjust to your checkout location.
+WorkingDirectory=/opt/wechat-insight/frontend
+User=www-data
+Group=www-data
+Environment=NODE_ENV=production
+Environment=PORT=3000
+# Backend FastAPI (systemd wechatinsight-api) on the same host.
+# NOTE: rewrites bake this at BUILD time — rebuild with the same value if it changes.
+Environment=API_PROXY_TARGET=http://127.0.0.1:8000
+Environment=NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000
+Environment=NEXT_PUBLIC_AUTH_ENFORCED=false
+# Run the Next.js server directly (output: "standalone" is also produced, but
+# `next start` is the simplest bare-metal runner).
+ExecStart=/opt/wechat-insight/frontend/node_modules/.bin/next start -p 3000 -H 0.0.0.0
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+# Self-host the Next.js frontend (moved off Vercel).
+# Usage:  docker compose -f deploy/docker-compose.web.yml up -d --build
+#
+# The backend (FastAPI) is expected to run on the host at :8000 (systemd).
+# `host.docker.internal` lets the container reach it on Linux/macOS/Windows.
+services:
+  web:
+    build:
+      context: ../frontend
+      args:
+        # Baked into next.config rewrites at build time.
+        API_PROXY_TARGET: ${API_PROXY_TARGET:-http://host.docker.internal:8000}
+        NEXT_PUBLIC_AUTH_ENFORCED: ${NEXT_PUBLIC_AUTH_ENFORCED:-false}
+    image: wechatinsight-web:latest
+    ports:
+      - "3000:3000"
+    environment:
+      API_PROXY_TARGET: ${API_PROXY_TARGET:-http://host.docker.internal:8000}
+      NEXT_PUBLIC_API_BASE: ${API_PROXY_TARGET:-http://host.docker.internal:8000}
+      NEXT_PUBLIC_AUTH_ENFORCED: ${NEXT_PUBLIC_AUTH_ENFORCED:-false}
+      NEXT_PUBLIC_SESSION_COOKIE_NAME: ${NEXT_PUBLIC_SESSION_COOKIE_NAME:-wi_session}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

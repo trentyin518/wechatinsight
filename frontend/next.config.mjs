@@ -20,6 +20,8 @@ if (
 
 const nextConfig = {
   reactStrictMode: true,
+  // Emit a minimal self-contained server bundle for Docker / bare-metal hosting.
+  output: "standalone",
   // Allow building even when the API base is only known at deploy time.
   env: {
     NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000",
