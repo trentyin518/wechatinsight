@@ -95,3 +95,33 @@ def test_duplicate_article_violates_unique_constraint(session):
     with pytest.raises(IntegrityError):
         session.commit()
     session.rollback()
+
+
+def test_content_stub_promoted_to_real_account(session):
+    """A real provider account absorbs a same-named ``content:<name>`` stub."""
+    stub = accounts_repo.upsert_from_provider(
+        session,
+        _account(provider_account_id="content:示例科技观察", name="示例科技观察"),
+    )
+    session.commit()
+    stub_id = stub.id
+    assert session.query(WechatAccount).count() == 1
+
+    real = accounts_repo.upsert_from_provider(
+        session,
+        _account(provider_account_id="mock-1001", name="示例科技观察"),
+    )
+    session.commit()
+
+    # No duplicate row: the real id is promoted onto the existing stub account.
+    assert real.id == stub_id
+    assert session.query(WechatAccount).count() == 1
+
+    mapped_ids = {
+        m.provider_account_id
+        for m in session.query(ProviderAccountMapping)
+        .filter(ProviderAccountMapping.account_id == stub_id)
+        .all()
+    }
+    # Both the synthetic content id and the real id resolve to the same account.
+    assert mapped_ids == {"content:示例科技观察", "mock-1001"}

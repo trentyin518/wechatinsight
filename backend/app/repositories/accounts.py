@@ -314,11 +314,62 @@ def find_by_provider_id(
     return mapping.account if mapping else None
 
 
+def _is_real_provider_id(provider_account_id: str) -> bool:
+    """True for a provider-native id (not a synthetic ``content:<name>`` stub)."""
+    return bool(provider_account_id) and not provider_account_id.startswith("content:")
+
+
+def _apply_provider_fields(account: WechatAccount, data: ProviderAccount) -> None:
+    """Refresh only fields we actually received; never blank out known data."""
+    for attr in (
+        "name",
+        "wechat_id",
+        "avatar_url",
+        "description",
+        "verification_subject",
+        "account_type",
+        "category",
+        "region",
+        "estimated_fans",
+        "avg_read",
+        "avg_like",
+        "avg_wow",
+        "avg_share",
+        "avg_comment",
+        "article_count",
+        "estimated_price",
+        "ad_count_30d",
+        "xigua_index",
+        "is_original",
+        "has_video",
+    ):
+        value = getattr(data, attr)
+        if value is not None:
+            setattr(account, attr, value)
+
+
 def upsert_from_provider(
     session: Session, data: ProviderAccount, *, priority: str | None = None
 ) -> WechatAccount:
     """Idempotently create/refresh an account keyed by (provider, provider_id)."""
     account = find_by_provider_id(session, data.provider, data.provider_account_id)
+
+    # Promote a same-named content-derived stub ("content:<name>") to the real
+    # account instead of creating a duplicate row for the same official account.
+    # The stub's mapping is kept and the real id is added, so both lookups (and
+    # the content-derived path) resolve to this single account.
+    if account is None and _is_real_provider_id(data.provider_account_id):
+        stub = find_by_provider_id(session, data.provider, f"content:{data.name}")
+        if stub is not None:
+            account = stub
+            session.add(
+                ProviderAccountMapping(
+                    account_id=account.id,
+                    provider=data.provider,
+                    provider_account_id=data.provider_account_id,
+                )
+            )
+
     if account is None:
         account = WechatAccount(
             name=data.name,
@@ -355,32 +406,7 @@ def upsert_from_provider(
             )
         )
     else:
-        # Only refresh fields we actually received; never blank out known data.
-        for attr in (
-            "name",
-            "wechat_id",
-            "avatar_url",
-            "description",
-            "verification_subject",
-            "account_type",
-            "category",
-            "region",
-            "estimated_fans",
-            "avg_read",
-            "avg_like",
-            "avg_wow",
-            "avg_share",
-            "avg_comment",
-            "article_count",
-            "estimated_price",
-            "ad_count_30d",
-            "xigua_index",
-            "is_original",
-            "has_video",
-        ):
-            value = getattr(data, attr)
-            if value is not None:
-                setattr(account, attr, value)
+        _apply_provider_fields(account, data)
     session.flush()
     return account
 
